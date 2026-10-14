@@ -86,7 +86,8 @@ _has "$M" '"${SCRIPT_DIR}"/patches/apply_*.py' "moriio.sh applies patches/apply_
 _has "$M" 'failed" >&2; exit 1' "moriio.sh aborts the boot on a failed patch"
 _has "$(ls "$DIR"/patches/)" "apply_moriio_dsv4_attn_backend_fix.py" "patches/ has the attn-backend fix"
 _has "$(ls "$DIR"/patches/)" "apply_moriio_dsv4_mixed_block_size_fix.py" "patches/ has the mixed-block-size fix"
-_count "$(ls "$DIR"/patches/apply_*.py)" "apply_" 2 "patches/ holds exactly two patches"
+_has "$(ls "$DIR"/patches/)" "apply_kv_cache_promote_bounded_replay_fix.py" "patches/ has the SWA-promotion fix"
+_count "$(ls "$DIR"/patches/apply_*.py)" "apply_" 3 "patches/ holds exactly three patches"
 _count "$(cat "$DIR/models.yaml")" 'dp_flags: "--tokenizer-mode deepseek_v4 --disable-hybrid-kv-cache-manager"' 2 "both DSV4 models run with HMA off"
 
 # Apply the patches to this fork's own connector source, so anchor drift on the
@@ -103,6 +104,13 @@ if [ -f "$_SRC_ROOT/$_REL" ]; then
   _hasnot "$(cat "$_T/$_REL")" "MoRIIO KV cache block size mismatch" "patched connector no longer rejects mixed block sizes"
   _has "$(cat "$_T/$_REL")" "MoRIIO KV cache num_blocks mismatch" "patched connector still checks num_blocks"
   _has "$(python3 -m py_compile "$_T/$_REL" 2>&1 && echo COMPILES)" "COMPILES" "patched connector compiles"
+  _PL="v1/core/kv_cache_planning.py"
+  mkdir -p "$_T/$(dirname "$_PL")"; cp "$_SRC_ROOT/$_PL" "$_T/$_PL"
+  _P="$DIR/patches/apply_kv_cache_promote_bounded_replay_fix.py"
+  _has "$(python3 "$_P" "$_T" 2>&1)" "[kv-promote] APPLIED" "SWA-promotion fix applies to the in-tree planner"
+  _has "$(python3 "$_P" "$_T" 2>&1)" "already patched" "SWA-promotion fix is idempotent"
+  _has "$(cat "$_T/$_PL")" 'drop=("extra_retained_tokens", "bounded_replay"),' "promotion drops bounded_replay"
+  _has "$(python3 -m py_compile "$_T/$_PL" 2>&1 && echo COMPILES)" "COMPILES" "patched planner compiles"
   _has "$(grep -c 'class DeepseekV4ROCMAiterMLASparseBackend' "$_SRC_ROOT/models/deepseek_v4/amd/rocm.py")" "1" "in-tree DSV4 ROCm backend class exists"
   rm -rf "$_T"
 else
