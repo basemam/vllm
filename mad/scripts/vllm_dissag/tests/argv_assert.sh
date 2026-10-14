@@ -85,17 +85,23 @@ _hasnot "$S" "apply_" "slurm names no patch script"
 _has "$M" '"${SCRIPT_DIR}"/patches/apply_*.py' "moriio.sh applies patches/apply_*.py at boot"
 _has "$M" 'failed" >&2; exit 1' "moriio.sh aborts the boot on a failed patch"
 _has "$(ls "$DIR"/patches/)" "apply_moriio_dsv4_attn_backend_fix.py" "patches/ has the attn-backend fix"
-_count "$(ls "$DIR"/patches/apply_*.py)" "apply_" 1 "patches/ holds exactly one patch"
+_has "$(ls "$DIR"/patches/)" "apply_moriio_dsv4_mixed_block_size_fix.py" "patches/ has the mixed-block-size fix"
+_count "$(ls "$DIR"/patches/apply_*.py)" "apply_" 2 "patches/ holds exactly two patches"
+_count "$(cat "$DIR/models.yaml")" 'dp_flags: "--tokenizer-mode deepseek_v4 --disable-hybrid-kv-cache-manager"' 2 "both DSV4 models run with HMA off"
 
-# Apply the patch to this fork's own connector source, so anchor drift on the
+# Apply the patches to this fork's own connector source, so anchor drift on the
 # vLLM tree the image is built from fails here rather than at boot.
 _SRC_ROOT="$(cd "$DIR/../../.." && pwd)/vllm"
 _REL="distributed/kv_transfer/kv_connector/v1/moriio/moriio_connector.py"
 if [ -f "$_SRC_ROOT/$_REL" ]; then
   _T="$(mktemp -d)"; mkdir -p "$_T/$(dirname "$_REL")"; cp "$_SRC_ROOT/$_REL" "$_T/$_REL"
-  _P="$DIR/patches/apply_moriio_dsv4_attn_backend_fix.py"
-  _has "$(python3 "$_P" "$_T" 2>&1)" "[dsv4-attn] APPLIED" "attn fix applies to the in-tree connector"
-  _has "$(python3 "$_P" "$_T" 2>&1)" "already patched" "attn fix is idempotent"
+  for _pt in attn_backend:dsv4-attn mixed_block_size:dsv4-mixed-bs; do
+    _P="$DIR/patches/apply_moriio_dsv4_${_pt%%:*}_fix.py"
+    _has "$(python3 "$_P" "$_T" 2>&1)" "[${_pt##*:}] APPLIED" "${_pt%%:*} fix applies to the in-tree connector"
+    _has "$(python3 "$_P" "$_T" 2>&1)" "already patched" "${_pt%%:*} fix is idempotent"
+  done
+  _hasnot "$(cat "$_T/$_REL")" "MoRIIO KV cache block size mismatch" "patched connector no longer rejects mixed block sizes"
+  _has "$(cat "$_T/$_REL")" "MoRIIO KV cache num_blocks mismatch" "patched connector still checks num_blocks"
   _has "$(python3 -m py_compile "$_T/$_REL" 2>&1 && echo COMPILES)" "COMPILES" "patched connector compiles"
   _has "$(grep -c 'class DeepseekV4ROCMAiterMLASparseBackend' "$_SRC_ROOT/models/deepseek_v4/amd/rocm.py")" "1" "in-tree DSV4 ROCm backend class exists"
   rm -rf "$_T"

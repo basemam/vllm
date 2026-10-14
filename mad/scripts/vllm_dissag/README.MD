@@ -9,8 +9,12 @@ vLLM. The scripts in `patches/` are applied at boot on every node, before
 | patch | why |
 |---|---|
 | `apply_moriio_dsv4_attn_backend_fix.py` | MoRIIO's generic MLA backend lookup rejects DSV4's `fp8_ds_mla` cache; point it at `DeepseekV4ROCMAiterMLASparseBackend` |
+| `apply_moriio_dsv4_mixed_block_size_fix.py` | DSV4 mixes 256-token MLA and 64-token SWA/indexer pages; MoRIIO's uniform `block_size` check would reject the register |
 
-A patch whose anchor no longer matches aborts the boot.
+A patch whose anchor no longer matches aborts the boot. Both models also run
+with `--disable-hybrid-kv-cache-manager` (HMA off, `models.yaml`): MoRIIO's
+HMA register path requires one `block_len` across all layers, which DSV4 does
+not have.
 
 ## Image
 
