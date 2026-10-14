@@ -63,10 +63,10 @@ echo ""
 echo "=== slurm forwards DSV4 MoRI-EP / NIAH knobs ==="
 _has "$S" '${DSV4_EAGER:+-e DSV4_EAGER=' "slurm forwards DSV4_EAGER"
 
-# The image is stock upstream vLLM: nothing is patched at build or at boot,
-# and no submit-side knob pretends otherwise.
+# The image is stock upstream vLLM. The only patches are patches/apply_*.py,
+# applied at boot by connector_runtime_patch, and no submit-side knob gates them.
 echo ""
-echo "=== stock upstream image, no patches ==="
+echo "=== stock upstream image, boot-time patches only ==="
 M="$(cat "$DIR/connectors/moriio.sh")"
 W="$(cat "$DIR/run_wideep_bench.sh")"
 _DF="$(cat "$DIR/../../docker/vllm_main.dsv4.ubuntu.amd.Dockerfile")"
@@ -75,11 +75,33 @@ _hasnot "$_DF" "PATCHES_REPO" "main Dockerfile fetches no patch scripts"
 _hasnot "$_DF" "SKIP_RUNTIME_PATCH" "main Dockerfile sets no SKIP_RUNTIME_PATCH"
 _has "$_DF" 'echo "DSV4_PATCHES=none"' "main Dockerfile stamps DSV4_PATCHES=none"
 _has "$_DF" '! grep -q _mori_trim_rows' "main Dockerfile asserts mori.py is untrimmed"
-for k in apply_ SKIP_RUNTIME_PATCH MORI_TRIM DSV4_ENABLE_HMA DSV4_TRANSFER_ATTN DSV4_STORAGE_UPSTREAM_SPAN ROUTER_BOOT_INSTALL; do
+for k in SKIP_RUNTIME_PATCH MORI_TRIM DSV4_ENABLE_HMA DSV4_TRANSFER_ATTN DSV4_STORAGE_UPSTREAM_SPAN ROUTER_BOOT_INSTALL; do
   _hasnot "$M" "$k" "moriio.sh has no $k"
   _hasnot "$W" "$k" "wrapper has no $k"
   _hasnot "$S" "$k" "slurm has no $k"
 done
+_hasnot "$W" "apply_" "wrapper names no patch script"
+_hasnot "$S" "apply_" "slurm names no patch script"
+_has "$M" '"${SCRIPT_DIR}"/patches/apply_*.py' "moriio.sh applies patches/apply_*.py at boot"
+_has "$M" 'failed" >&2; exit 1' "moriio.sh aborts the boot on a failed patch"
+_has "$(ls "$DIR"/patches/)" "apply_moriio_dsv4_attn_backend_fix.py" "patches/ has the attn-backend fix"
+_count "$(ls "$DIR"/patches/apply_*.py)" "apply_" 1 "patches/ holds exactly one patch"
+
+# Apply the patch to this fork's own connector source, so anchor drift on the
+# vLLM tree the image is built from fails here rather than at boot.
+_SRC_ROOT="$(cd "$DIR/../../.." && pwd)/vllm"
+_REL="distributed/kv_transfer/kv_connector/v1/moriio/moriio_connector.py"
+if [ -f "$_SRC_ROOT/$_REL" ]; then
+  _T="$(mktemp -d)"; mkdir -p "$_T/$(dirname "$_REL")"; cp "$_SRC_ROOT/$_REL" "$_T/$_REL"
+  _P="$DIR/patches/apply_moriio_dsv4_attn_backend_fix.py"
+  _has "$(python3 "$_P" "$_T" 2>&1)" "[dsv4-attn] APPLIED" "attn fix applies to the in-tree connector"
+  _has "$(python3 "$_P" "$_T" 2>&1)" "already patched" "attn fix is idempotent"
+  _has "$(python3 -m py_compile "$_T/$_REL" 2>&1 && echo COMPILES)" "COMPILES" "patched connector compiles"
+  _has "$(grep -c 'class DeepseekV4ROCMAiterMLASparseBackend' "$_SRC_ROOT/models/deepseek_v4/amd/rocm.py")" "1" "in-tree DSV4 ROCm backend class exists"
+  rm -rf "$_T"
+else
+  printf "  FAIL  in-tree connector not found at %s\n" "$_SRC_ROOT/$_REL"; fail=$((fail+1))
+fi
 _YML="$(python3 - "$DIR/models.yaml" <<'PY'
 import sys, yaml
 y = yaml.safe_load(open(sys.argv[1])) or {}

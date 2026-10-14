@@ -3,7 +3,14 @@
 Runs DeepSeek-V4-Flash-FP8 and DeepSeek-V4-Pro-FP8 as prefill/decode
 disaggregated serving on SLURM: MoRIIO KV transfer between roles, `-tp 1` +
 DP + MoRI expert parallelism inside each role. The image is stock upstream
-vLLM; nothing is patched at build or at boot.
+vLLM. The scripts in `patches/` are applied at boot on every node, before
+`vllm serve`, until they are baked into the image:
+
+| patch | why |
+|---|---|
+| `apply_moriio_dsv4_attn_backend_fix.py` | MoRIIO's generic MLA backend lookup rejects DSV4's `fp8_ds_mla` cache; point it at `DeepseekV4ROCMAiterMLASparseBackend` |
+
+A patch whose anchor no longer matches aborts the boot.
 
 ## Image
 
