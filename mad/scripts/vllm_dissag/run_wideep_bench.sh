@@ -22,7 +22,7 @@ IMG_MAIN="rocm/pytorch-private:vllm-main-bf6c80c7e-mori-v1.2.3.post1-router"
 
 # Live exclude (override with EXCLUDE_NODES= or --exclude). Empty + --nodelist
 # means "only that pool".
-DEFAULT_EXCLUDE='useocpm2m-097-[008,015,019-020,025-026,028,033,038,040-043,045,049,069,071,077-080,082-084,089,094-095,100,114,115,121-123,125,135-136,139-140,142,144,154]'
+DEFAULT_EXCLUDE='useocpm2m-097-[008,015,019-020,025-026,028,033,038-043,045,049,069,071,077-080,082-084,089,094-095,100,114,115,121-123,125,135-136,139-140,142,144,154]'
 
 usage() {
     cat <<'EOF'
