@@ -15,13 +15,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Upstream vLLM main + MoRI v1.2.3.post1 + vllm-router, no patches.
+# Upstream vLLM main + MoRI v1.2.3.post1 + vllm-router, unpatched; patches/ is
+# applied at boot.
 # Dockerfile: mad/docker/vllm_main.dsv4.ubuntu.amd.Dockerfile.
 IMG_MAIN="rocm/pytorch-private:vllm-main-bf6c80c7e-mori-v1.2.3.post1-router"
 
 # Live exclude (override with EXCLUDE_NODES= or --exclude). Empty + --nodelist
 # means "only that pool".
-DEFAULT_EXCLUDE='useocpm2m-097-[008,015,019-020,025,028,033,040-042,045,049,069,071,077-080,082-084,089,094-095,100,114,115,121-123,125,135-136,139-140,142,144,154]'
+DEFAULT_EXCLUDE='useocpm2m-097-[008,015,019-020,025-026,028,033,038,040-042,045,049,069,071,077-080,082-084,089,094-095,100,114,115,121-123,125,135-136,139-140,142,144,154]'
 
 usage() {
     cat <<'EOF'
@@ -34,7 +35,7 @@ Usage: ./run_wideep_bench.sh BENCH MODEL TOPO [flags]
 
 Flags:
   --dry-run              print sbatch, do not submit
-  --image main|<tag>     image (default: main = vLLM main + MoRI + router, no patches)
+  --image main|<tag>     image (default: main = vLLM main + MoRI + router)
   --exclude LIST         slurm --exclude (ignored if --nodelist is set)
   --nodelist LIST        pin to a node pool (no --exclude)
   --name NAME            slurm job name override

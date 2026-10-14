@@ -131,12 +131,19 @@ _moriio_build_kv_transfer_config() {
 }
 
 connector_runtime_patch() {
-    # vLLM is stock upstream (mad/docker/vllm_main.dsv4.ubuntu.amd.Dockerfile);
-    # nothing is patched at build or at boot.
+    # The image is stock upstream (mad/docker/vllm_main.dsv4.ubuntu.amd.Dockerfile);
+    # the scripts in patches/ are applied here, at boot, until they are baked.
     if [ "${MODEL_NAME:-}" != "DeepSeek-V4-Flash-FP8" ] && [ "${MODEL_NAME:-}" != "DeepSeek-V4-Pro-FP8" ]; then
         return 0
     fi
     echo "[dsv4] $(grep -E '^(VLLM_REF|MORI_REF|BASE_PKG|TORCH|VLLM_ROUTER_REF|DSV4_PATCHES)' /app/versions.txt 2>/dev/null | tr '\n' ' ')"
+    local _vllm_dir _p
+    _vllm_dir="$(python3 -c 'import os, vllm; print(os.path.dirname(vllm.__file__))')" || {
+        echo "[dsv4] ERROR: cannot locate the vllm package" >&2; exit 1; }
+    for _p in "${SCRIPT_DIR}"/patches/apply_*.py; do
+        [ -f "$_p" ] || continue
+        python3 "$_p" "$_vllm_dir" || { echo "[dsv4] ERROR: $(basename "$_p") failed" >&2; exit 1; }
+    done
     if [ "${MORI_JIT_SCRUB:-1}" = "1" ]; then
         echo "[mori-scrub] removing stale MoRI JIT locks/state (/root/.mori, /tmp/mori_jit_*)"
         find /root/.mori -name '*.lock' -delete 2>/dev/null || true
