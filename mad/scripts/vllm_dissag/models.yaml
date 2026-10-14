@@ -1,0 +1,85 @@
+# Model catalog for vllm_disagg.sh (disaggregated PD, MoRIIO + MoRI EP).
+# -----------------------------------------------------------------------------
+# Selected by MODEL_NAME. WIDE_EP=1 -> PARALLEL_MODE=dp ->
+#   base_flags + dp_flags + prefill.dp / decode.dp
+#
+# Per model:
+#   base_flags          always applied (both roles)
+#   dp_flags            applied to BOTH roles
+#   prefill/decode.dp   role specific flags
+#   env: {VAR: val}     per-model ENV. Exported BEFORE the connector's setup_env, so it
+#                       overrides connector defaults but still yields to a submit-time
+#                       `-e VAR=...`. GPU_MEMORY_UTILIZATION is optional here; if
+#                       omitted, the launcher uses 0.70 at EP>=32, else 0.8.
+#                       (Platform + MoRI fabric env lives in connectors/moriio.env.)
+#
+# The connector owns --data-parallel-size / --enable-expert-parallel /
+# --all2all-backend / --kv-transfer-config / --port.
+# Prefix caching is off (--no-enable-prefix-caching) unless ENABLE_PREFIX_CACHE=1.
+
+# DeepSeek-V4-Flash-FP8. Sparse MLA + SWA, not the V3 recipe.
+#   - block=256 + kv fp8_e4m3 (DSV4 remaps to fp8_ds_mla)
+#   - AITER_MLA=1, tokenizer-mode deepseek_v4
+#   - max-model-len 40960 (35k-word NIAH ≈ 37.8k tokens). Do not uncap.
+#   - decode FULL_DECODE_ONLY, capture 1 2 4, max-num-seqs 4
+# Weights: /shared_inference/models_blog/DeepSeek-V4-Flash-FP8
+#   43L, hidden 4096, 256 experts top-6, fp8.
+DeepSeek-V4-Flash-FP8:
+  env:
+    VLLM_USE_V1: "1"
+    VLLM_ROCM_USE_AITER: "1"
+    VLLM_ROCM_USE_AITER_PAGED_ATTN: "0"
+    VLLM_ROCM_USE_AITER_RMSNORM: "1"
+    VLLM_USE_AITER_TRITON_SILU_MUL: "0"
+    VLLM_ROCM_USE_AITER_MLA: "1"
+    KV_BLOCK_SIZE: "256"
+    KV_CACHE_DTYPE: "fp8_e4m3"
+    KV_CACHE_MEMORY_BYTES: "20000000000"
+    GPU_MEMORY_UTILIZATION: "0.80"
+    VLLM_CUDAGRAPH_MODE: "NONE"
+    PREFILL_CUDAGRAPH_MODE: "NONE"
+    # Submit-time DECODE_CUDAGRAPH_MODE wins. DSV4_EAGER=1 forces decode NONE
+    # +quant_fp8 (never --enforce-eager).
+    DECODE_CUDAGRAPH_MODE: "FULL_DECODE_ONLY"
+    CUDAGRAPH_CAPTURE_SIZES: "1 2 4"
+    TORCHINDUCTOR_BENCHMARK_KERNEL: "0"
+    MORI_SHMEM_HEAP_SIZE: "34359738368"
+    CURL_SUITE: "short"
+  dp_flags: "--tokenizer-mode deepseek_v4"
+  prefill:
+    # mnbt 1024: the default 16384 OOMs the profile_run dummy.
+    dp: "--max-num-seqs 4 --max-model-len 40960 --max-num-batched-tokens 1024"
+  decode:
+    dp: "--max-num-seqs 4 --max-model-len 40960 --max-num-batched-tokens 1024"
+
+# DeepSeek-V4-Pro-FP8. Same architecture and tokenizer as Flash.
+# Weights: /shared_inference/models_blog/DeepSeek-V4-Pro-FP8
+#   61L, hidden 7168, 128 heads, 384 experts top-6, 805 GiB checkpoint,
+#   125 GiB/GPU after EP8. Util 0.80 and mnbt 1024 keep the profile_run dummy
+#   inside the free memory (217734/217749).
+DeepSeek-V4-Pro-FP8:
+  env:
+    VLLM_USE_V1: "1"
+    VLLM_ROCM_USE_AITER: "1"
+    VLLM_ROCM_USE_AITER_PAGED_ATTN: "0"
+    VLLM_ROCM_USE_AITER_RMSNORM: "1"
+    VLLM_USE_AITER_TRITON_SILU_MUL: "0"
+    VLLM_ROCM_USE_AITER_MLA: "1"
+    KV_BLOCK_SIZE: "256"
+    KV_CACHE_DTYPE: "fp8_e4m3"
+    KV_CACHE_MEMORY_BYTES: "20000000000"
+    GPU_MEMORY_UTILIZATION: "0.80"
+    VLLM_CUDAGRAPH_MODE: "NONE"
+    # Prefill capture deadlocks the multi-node DP prefill pod.
+    PREFILL_CUDAGRAPH_MODE: "NONE"
+    DECODE_CUDAGRAPH_MODE: "FULL_DECODE_ONLY"
+    # Decode runs --max-num-seqs 4; larger capture sizes are unreachable.
+    CUDAGRAPH_CAPTURE_SIZES: "1 2 4"
+    TORCHINDUCTOR_BENCHMARK_KERNEL: "0"
+    MORI_SHMEM_HEAP_SIZE: "17179869184"
+    CURL_SUITE: "short"
+  dp_flags: "--tokenizer-mode deepseek_v4"
+  prefill:
+    dp: "--max-num-seqs 4 --max-model-len 40960 --max-num-batched-tokens 1024"
+  decode:
+    dp: "--max-num-seqs 4 --max-model-len 40960 --max-num-batched-tokens 1024"
