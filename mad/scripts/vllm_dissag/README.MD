@@ -11,6 +11,7 @@ vLLM. The scripts in `patches/` are applied at boot on every node, before
 | `apply_moriio_dsv4_attn_backend_fix.py` | MoRIIO's generic MLA backend lookup rejects DSV4's `fp8_ds_mla` cache; point it at `DeepseekV4ROCMAiterMLASparseBackend` |
 | `apply_moriio_dsv4_mixed_block_size_fix.py` | DSV4 mixes 256-token MLA and 64-token SWA/indexer pages; MoRIIO's uniform `block_size` check would reject the register |
 | `apply_kv_cache_promote_bounded_replay_fix.py` | with HMA off, KV planning rebuilds `SlidingWindowMLASpec` as `MLAAttentionSpec` and forwards the SWA-only `bounded_replay` field, which the target rejects |
+| `apply_mori_trim_dispatch.py` | MoRI `dispatch()` returns a `world_size × max_num_tokens` receive buffer and the expert GEMMs run over all of it; trim it to this step's real token bound from `DPMetadata` (`MORI_TRIM_DISPATCH=0` in the container restores stock) |
 
 A patch whose anchor no longer matches aborts the boot. Both models also run
 with `--disable-hybrid-kv-cache-manager` (HMA off, `models.yaml`): MoRIIO's
