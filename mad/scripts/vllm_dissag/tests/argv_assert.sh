@@ -186,8 +186,14 @@ _has "$S" '${NIAH_STOP_BLANK:+-e NIAH_STOP_BLANK=' "slurm forwards NIAH_STOP_BLA
 _has "$S" '${NIAH_PAIR_SLEEP_S:+-e NIAH_PAIR_SLEEP_S=' "slurm forwards NIAH_PAIR_SLEEP_S"
 _has "$S" '${NIAH_WARMUP_SCORE_SLEEP_S:+-e NIAH_WARMUP_SCORE_SLEEP_S=' "slurm forwards NIAH_WARMUP_SCORE_SLEEP_S"
 _has "$S" '${CONTAINER_BARRIER_TIMEOUT_SECONDS:+-e CONTAINER_BARRIER_TIMEOUT_SECONDS=' "slurm forwards CONTAINER_BARRIER_TIMEOUT_SECONDS"
-_has "$S" '${PROXY_ROUTE_DP:+-e PROXY_ROUTE_DP=' "slurm forwards PROXY_ROUTE_DP"
 W="$(cat "$DIR/run_wideep_bench.sh")"
+C="$(cat "$DIR/connectors/moriio.sh")"
+_has "$W" 'export PROXY_TYPE="${PROXY_TYPE:-vllm_router}"' "wrapper defaults to the baked vllm-router"
+_has "$C" "only 'vllm_router' is supported" "connector rejects every other proxy"
+_has "$([[ -e "$DIR/proxy" ]] && echo present || echo absent)" "absent" "no Python proxy directory"
+for _k in moriio_toy moriio_pd_proxy toy_proxy PROXY_ROUTE_DP PROXY_MAX_CONCURRENCY PROXY_LOG_LEVEL MORIIO_CHILD_HTTP PROXY_HANDSHAKE_PER_POD MORIIO_TOY_PROXY; do
+  _hasnot "$W$S$C" "$_k" "no Python-proxy knob: $_k"
+done
 _has "$W" 'unset NIAH_LIST_PRIME' "wrapper mrcr unsets NIAH_LIST_PRIME"
 _has "$W" 'NIAH_LIST_PRIME="1."' "wrapper Flash NIAH defaults list-prime 1."
 _has "$W" 'Pro: never prime' "wrapper Pro NIAH forces the unprimed stem"

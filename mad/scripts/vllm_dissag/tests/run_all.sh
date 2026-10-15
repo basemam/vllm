@@ -27,8 +27,5 @@ echo ""
 echo "############### test_socket_barrier.py ###############"
 python3 "$ROOT/tests/test_socket_barrier.py" || rc=1
 echo ""
-echo "############### test_moriio_pd_proxy.py ###############"
-( cd "$ROOT/proxy" && python3 test_moriio_pd_proxy.py ) || rc=1
-echo ""
 [[ "$rc" == "0" ]] && echo "ALL OFFLINE SUITES PASSED ✅" || echo "SOME SUITES FAILED ❌"
 exit $rc
