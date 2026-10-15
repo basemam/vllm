@@ -87,7 +87,8 @@ _has "$M" 'failed" >&2; exit 1' "moriio.sh aborts the boot on a failed patch"
 _has "$(ls "$DIR"/patches/)" "apply_moriio_dsv4_attn_backend_fix.py" "patches/ has the attn-backend fix"
 _has "$(ls "$DIR"/patches/)" "apply_moriio_dsv4_mixed_block_size_fix.py" "patches/ has the mixed-block-size fix"
 _has "$(ls "$DIR"/patches/)" "apply_kv_cache_promote_bounded_replay_fix.py" "patches/ has the SWA-promotion fix"
-_count "$(ls "$DIR"/patches/apply_*.py)" "apply_" 3 "patches/ holds exactly three patches"
+_has "$(ls "$DIR"/patches/)" "apply_mori_trim_dispatch.py" "patches/ has the MoRI dispatch trim"
+_count "$(ls "$DIR"/patches/apply_*.py)" "apply_" 4 "patches/ holds exactly four patches"
 _count "$(cat "$DIR/models.yaml")" 'dp_flags: "--tokenizer-mode deepseek_v4 --disable-hybrid-kv-cache-manager --no-async-scheduling"' 2 "both DSV4 models run with HMA and async scheduling off"
 
 # Apply the patches to this fork's own connector source, so anchor drift on the
@@ -111,6 +112,13 @@ if [ -f "$_SRC_ROOT/$_REL" ]; then
   _has "$(python3 "$_P" "$_T" 2>&1)" "already patched" "SWA-promotion fix is idempotent"
   _has "$(cat "$_T/$_PL")" 'drop=("extra_retained_tokens", "bounded_replay"),' "promotion drops bounded_replay"
   _has "$(python3 -m py_compile "$_T/$_PL" 2>&1 && echo COMPILES)" "COMPILES" "patched planner compiles"
+  _MR="model_executor/layers/fused_moe/prepare_finalize/mori.py"
+  mkdir -p "$_T/$(dirname "$_MR")"; cp "$_SRC_ROOT/$_MR" "$_T/$_MR"
+  _P="$DIR/patches/apply_mori_trim_dispatch.py"
+  _has "$(python3 "$_P" "$_T" 2>&1)" "[mori-trim] patched" "MoRI trim applies to the in-tree prepare/finalize"
+  _has "$(python3 "$_P" "$_T" 2>&1)" "already patched" "MoRI trim is idempotent"
+  _has "$(python3 -m py_compile "$_T/$_MR" 2>&1 && echo COMPILES)" "COMPILES" "patched mori.py compiles"
+  _has "$(grep -q 'num_tokens_across_dp_cpu' "$_SRC_ROOT/forward_context.py" && echo FOUND)" "FOUND" "in-tree DPMetadata exposes num_tokens_across_dp_cpu"
   _has "$(grep -c 'class DeepseekV4ROCMAiterMLASparseBackend' "$_SRC_ROOT/models/deepseek_v4/amd/rocm.py")" "1" "in-tree DSV4 ROCm backend class exists"
   rm -rf "$_T"
 else
