@@ -90,6 +90,7 @@ _has "$(ls "$DIR"/patches/)" "apply_kv_cache_promote_bounded_replay_fix.py" "pat
 _has "$(ls "$DIR"/patches/)" "apply_mori_trim_dispatch.py" "patches/ has the MoRI dispatch trim"
 _count "$(ls "$DIR"/patches/apply_*.py)" "apply_" 4 "patches/ holds exactly four patches"
 _count "$(cat "$DIR/models.yaml")" 'dp_flags: "--tokenizer-mode deepseek_v4 --disable-hybrid-kv-cache-manager --no-async-scheduling"' 2 "both DSV4 models run with HMA and async scheduling off"
+_count "$(cat "$DIR/models.yaml")" 'VLLM_USE_V2_MODEL_RUNNER: "0"' 2 "both DSV4 models run the V1 model runner"
 
 # Apply the patches to this fork's own connector source, so anchor drift on the
 # vLLM tree the image is built from fails here rather than at boot.

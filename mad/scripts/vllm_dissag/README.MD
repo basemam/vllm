@@ -17,7 +17,9 @@ A patch whose anchor no longer matches aborts the boot. Both models also run
 with `--disable-hybrid-kv-cache-manager` (HMA off, `models.yaml`): MoRIIO's
 HMA register path requires one `block_len` across all layers, which DSV4 does
 not have. They also pass `--no-async-scheduling`, which main would otherwise
-enable and which has hung PD decode before.
+enable and which has hung PD decode before, and run the V1 model runner
+(`VLLM_USE_V2_MODEL_RUNNER=0`): under Model Runner V2 a decode rank's first
+real forward deadlocked the MoRI EP all2all against its peers' dummy batches.
 
 ## Image
 
