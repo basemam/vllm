@@ -15,7 +15,8 @@ vLLM. The scripts in `patches/` are applied at boot on every node, before
 A patch whose anchor no longer matches aborts the boot. Both models also run
 with `--disable-hybrid-kv-cache-manager` (HMA off, `models.yaml`): MoRIIO's
 HMA register path requires one `block_len` across all layers, which DSV4 does
-not have.
+not have. They also pass `--no-async-scheduling`, which main would otherwise
+enable and which has hung PD decode before.
 
 ## Image
 

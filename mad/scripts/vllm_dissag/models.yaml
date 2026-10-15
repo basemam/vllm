@@ -25,6 +25,8 @@
 #   - HMA off: MoRIIO is SupportsHMA on main, so vLLM would leave it on, and
 #     MoRIIO's HMA register path requires one block_len for every layer (DSV4's
 #     indexer and MLA caches differ: 476606).
+#   - async scheduling off: main enables it by default, and it has hung PD
+#     decode before (476877 decode stalled on its first bench request).
 # Weights: /shared_inference/models_blog/DeepSeek-V4-Flash-FP8
 #   43L, hidden 4096, 256 experts top-6, fp8.
 DeepSeek-V4-Flash-FP8:
@@ -48,7 +50,7 @@ DeepSeek-V4-Flash-FP8:
     TORCHINDUCTOR_BENCHMARK_KERNEL: "0"
     MORI_SHMEM_HEAP_SIZE: "34359738368"
     CURL_SUITE: "short"
-  dp_flags: "--tokenizer-mode deepseek_v4 --disable-hybrid-kv-cache-manager"
+  dp_flags: "--tokenizer-mode deepseek_v4 --disable-hybrid-kv-cache-manager --no-async-scheduling"
   prefill:
     # mnbt 1024: the default 16384 OOMs the profile_run dummy.
     dp: "--max-num-seqs 4 --max-model-len 40960 --max-num-batched-tokens 1024"
@@ -81,8 +83,8 @@ DeepSeek-V4-Pro-FP8:
     TORCHINDUCTOR_BENCHMARK_KERNEL: "0"
     MORI_SHMEM_HEAP_SIZE: "17179869184"
     CURL_SUITE: "short"
-  # HMA off, as for Flash.
-  dp_flags: "--tokenizer-mode deepseek_v4 --disable-hybrid-kv-cache-manager"
+  # HMA and async scheduling off, as for Flash.
+  dp_flags: "--tokenizer-mode deepseek_v4 --disable-hybrid-kv-cache-manager --no-async-scheduling"
   prefill:
     dp: "--max-num-seqs 4 --max-model-len 40960 --max-num-batched-tokens 1024"
   decode:
