@@ -44,7 +44,10 @@ DeepSeek-V4-Flash-FP8:
     KV_BLOCK_SIZE: "256"
     KV_CACHE_DTYPE: "fp8_e4m3"
     KV_CACHE_MEMORY_BYTES: "20000000000"
-    GPU_MEMORY_UTILIZATION: "0.80"
+    # vLLM snapshots free memory after distributed init, so the MoRI shmem heap
+    # and comm buffers already count against it; 0.80 left too little headroom
+    # and three prefill ranks failed the startup check (478296).
+    GPU_MEMORY_UTILIZATION: "0.70"
     VLLM_CUDAGRAPH_MODE: "NONE"
     PREFILL_CUDAGRAPH_MODE: "NONE"
     # Submit-time DECODE_CUDAGRAPH_MODE wins. DSV4_EAGER=1 forces decode NONE
@@ -64,7 +67,7 @@ DeepSeek-V4-Flash-FP8:
 # DeepSeek-V4-Pro-FP8. Same architecture and tokenizer as Flash.
 # Weights: /shared_inference/models_blog/DeepSeek-V4-Pro-FP8
 #   61L, hidden 7168, 128 heads, 384 experts top-6, 805 GiB checkpoint,
-#   125 GiB/GPU after EP8. Util 0.80 and mnbt 1024 keep the profile_run dummy
+#   125 GiB/GPU after EP8. Util 0.70 and mnbt 1024 keep the profile_run dummy
 #   inside the free memory (217734/217749).
 DeepSeek-V4-Pro-FP8:
   env:
@@ -78,7 +81,10 @@ DeepSeek-V4-Pro-FP8:
     KV_BLOCK_SIZE: "256"
     KV_CACHE_DTYPE: "fp8_e4m3"
     KV_CACHE_MEMORY_BYTES: "20000000000"
-    GPU_MEMORY_UTILIZATION: "0.80"
+    # vLLM snapshots free memory after distributed init, so the MoRI shmem heap
+    # and comm buffers already count against it; 0.80 left too little headroom
+    # and three prefill ranks failed the startup check (478296).
+    GPU_MEMORY_UTILIZATION: "0.70"
     VLLM_CUDAGRAPH_MODE: "NONE"
     # Prefill capture deadlocks the multi-node DP prefill pod.
     PREFILL_CUDAGRAPH_MODE: "NONE"
