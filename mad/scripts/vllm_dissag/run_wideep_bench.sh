@@ -9,7 +9,7 @@
 #   ./run_wideep_bench.sh niah dsv4fls 2p2d --dry-run
 #   MRCR_PER_BIN=8 ./run_wideep_bench.sh mrcr dsv4fls 2p2d --time 04:00:00
 #
-# Changing EP16 → EP24/EP32 is TOPO only. Do not set xP/yD/-N/PROXY_ROUTE_DP by hand.
+# Changing EP16 → EP24/EP32 is TOPO only. Do not set xP/yD/-N by hand.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -86,7 +86,7 @@ esac
 
 # --- TOPO → xP yD N EP ---
 # vllm_disagg.sh computes PREFILL_DP_SIZE=xP*8 and DECODE_DP_SIZE=yD*8
-# independently, and the proxy routes on min(P,D) capped by PROXY_ROUTE_DP.
+# independently.
 case "$TOPO_IN" in
     1p1d|ep8)  xP=1; yD=1; TOPO=1p1d ;;
     2p2d|ep16) xP=2; yD=2; TOPO=2p2d ;;
@@ -189,22 +189,8 @@ elif [[ "$TIME_ARG" > "$ASSOC_MAX_WALL" ]]; then
     echo "WARN: --time $TIME_ARG exceeds assoc MaxWall $ASSOC_MAX_WALL; slurm will hold this job as AssocMaxWallDurationPerJobLimit" >&2
 fi
 
-# Rank pin: head local DP is always 8. Without this, ranks 8+ (kv=null) get
-# routed while children are headless. MORIIO_CHILD_HTTP=1 gives each child a
-# real connector — leave PROXY_ROUTE_DP=0 so ranks 8+ POST to that pod.
-if [[ "${MORIIO_CHILD_HTTP:-0}" == "1" ]]; then
-    PROXY_ROUTE_DP="${PROXY_ROUTE_DP:-0}"
-    PROXY_HANDSHAKE_PER_POD="${PROXY_HANDSHAKE_PER_POD:-1}"
-else
-    PROXY_ROUTE_DP="${PROXY_ROUTE_DP:-8}"
-fi
-PROXY_MAX_CONCURRENCY="${PROXY_MAX_CONCURRENCY:-512}"
-# vllm_router KV-notify wants --moriio-dp-size; the toy proxy has no such flag.
-if [[ "${PROXY_TYPE:-moriio_toy}" == "vllm_router" ]]; then
-    ROUTER_SKIP_MORIIO_DP_SIZE="${ROUTER_SKIP_MORIIO_DP_SIZE:-0}"
-else
-    ROUTER_SKIP_MORIIO_DP_SIZE="${ROUTER_SKIP_MORIIO_DP_SIZE:-1}"
-fi
+# vllm-router KV-notify wants --moriio-dp-size (passed when the binary has it).
+ROUTER_SKIP_MORIIO_DP_SIZE="${ROUTER_SKIP_MORIIO_DP_SIZE:-0}"
 # 36367 is in ip_local_port_range; a DP worker can steal it (218629).
 MORI_PROXY_PING_PORT="${MORI_PROXY_PING_PORT:-36367}"
 
@@ -240,7 +226,6 @@ elif [[ -n "${DECODE_CUDAGRAPH_MODE:-}" ]]; then
     EXTRA_ENV+=(DECODE_CUDAGRAPH_MODE="${DECODE_CUDAGRAPH_MODE}")
 fi
 EXTRA_ENV+=(VLLM_LOGGING_LEVEL="${VLLM_LOGGING_LEVEL:-DEBUG}")
-EXTRA_ENV+=(PROXY_LOG_LEVEL="${PROXY_LOG_LEVEL:-DEBUG}")
 EXTRA_ENV+=(CURL_SUITE=short)
 EXTRA_ENV+=(MORI_PROXY_PING_PORT="$MORI_PROXY_PING_PORT")
 
@@ -322,7 +307,7 @@ unset SLURM_NNODES SLURM_JOB_NUM_NODES SLURM_JOB_NODELIST || true
 echo "=== WideEP bench plan ==="
 echo "BENCH=$BENCH  MODEL=$MODEL_NAME  TOPO=$TOPO  EP=$EP  xP=$xP yD=$yD  N=$N"
 echo "IMAGE=$DOCKER_IMAGE_NAME"
-echo "PROXY_TYPE=${PROXY_TYPE:-moriio_toy}  PROXY_ROUTE_DP=$PROXY_ROUTE_DP  SKIP_MORIIO_DP=${ROUTER_SKIP_MORIIO_DP_SIZE}  PING=${MORI_PROXY_PING_PORT}  CONC=${PROXY_MAX_CONCURRENCY}  WIDE_EP=1"
+echo "PROXY_TYPE=${PROXY_TYPE:-vllm_router}  SKIP_MORIIO_DP=${ROUTER_SKIP_MORIIO_DP_SIZE}  PING=${MORI_PROXY_PING_PORT}  WIDE_EP=1"
 echo "TIME=$TIME_ARG"
 [[ "$BENCH" == "smoke" || "$BENCH" == "validate" ]] && echo "SMOKE CON=${BENCHMARK_CON:-default}  COMBOS=$BENCHMARK_COMBINATIONS  STEP_SEC_PER_TOK=${STEP_SEC_PER_TOK:-}  STEP_TIMEOUT=${STEP_TIMEOUT:-}"
 [[ "$BENCH" == "niah" || "$BENCH" == "validate" ]] && echo "NIAH_METHOD=${NIAH_METHOD:-}  NIAH_WORDS=$NIAH_WORDS  NIAH_SEEDS=$NIAH_SEEDS  HALT=$NIAH_HALT_ON_FAIL  MAXTOK=${NIAH_MAXTOK:-}  WARMUP=${NIAH_WARMUP:-}  TIMEOUT=${NIAH_TIMEOUT:-}  WRAP=0  TERSE=${NIAH_TERSE:-0}  STOP_BLANK=${NIAH_STOP_BLANK:-0}  MINTOK=${NIAH_MIN_TOKENS:-0}  PRIME=${NIAH_LIST_PRIME:-}  STOP=${NIAH_STOP:-}  LOGPROBS=${NIAH_LOGPROBS:-0}"
@@ -363,12 +348,9 @@ if ! command -v sbatch >/dev/null 2>&1; then
 fi
 
 export DOCKER_IMAGE_NAME PYTHONUNBUFFERED=1
-export PROXY_TYPE="${PROXY_TYPE:-moriio_toy}"
+export PROXY_TYPE="${PROXY_TYPE:-vllm_router}"
 export CONNECTOR=moriio WIDE_EP=1
 export xP yD MODEL_NAME BENCHMARK_SCRIPT
-export PROXY_ROUTE_DP PROXY_MAX_CONCURRENCY
-export MORIIO_CHILD_HTTP="${MORIIO_CHILD_HTTP:-0}"
-export PROXY_HANDSHAKE_PER_POD="${PROXY_HANDSHAKE_PER_POD:-}"
 export ROUTER_SKIP_MORIIO_DP_SIZE MORI_PROXY_PING_PORT
 if [[ "$BENCH" == "smoke" || "$BENCH" == "validate" ]]; then
     export BENCHMARK_COMBINATIONS BENCHMARK_CON

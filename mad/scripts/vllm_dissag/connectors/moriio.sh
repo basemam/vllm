@@ -23,16 +23,16 @@ connector_init() {
     NOTIFY_PORT="${MORI_NOTIFY_PORT:-61005}"
     CONTAINER_BARRIER_PORT="${BARRIER_PORT_MORI:-2222}"
 
-    # Proxy: vllm_router (default) or moriio_toy. vllm_router carries the DP-rank
-    # KV-notify dpfix REQUIRED for wideEP DP — the toy proxy can't route the notify
-    # and decode hangs ("remote blocks never arrived"). Default to vllm_router.
+    # Proxy: the vllm-router baked into the image, only. It carries the DP-rank
+    # KV-notify that wideEP DP needs; the Python proxies cannot route it and
+    # decode hangs ("remote blocks never arrived").
     PROXY_TYPE="${PROXY_TYPE:-vllm_router}"
-    if [ "$PROXY_TYPE" != "vllm_router" ] && [ "$PROXY_TYPE" != "moriio_toy" ]; then
-        echo "Error: invalid PROXY_TYPE='${PROXY_TYPE}' (expected 'vllm_router' or 'moriio_toy')." >&2
+    if [ "$PROXY_TYPE" != "vllm_router" ]; then
+        echo "Error: invalid PROXY_TYPE='${PROXY_TYPE}' (only 'vllm_router' is supported)." >&2
         exit 1
     fi
     ROUTER_PORT="${ROUTER_PORT:-${VLLM_ROUTER_HTTP_PORT:-30000}}"
-    [ "$PROXY_TYPE" == "vllm_router" ] && PROXY_PORT="${ROUTER_PORT}"
+    PROXY_PORT="${ROUTER_PORT}"
 
     # Per-role MoRI all2all backend (wideEP only). Newer vLLM images (the v1.2.0
     # MoRI-EP image) split the kernel: prefill=high_throughput (InterNodeV1),
@@ -115,9 +115,6 @@ connector_setup_env() {
     export ROCSHMEM_MAX_NUM_CONTEXTS="${ROCSHMEM_MAX_NUM_CONTEXTS:-256}"
     # MoRI shmem heap: 4 GiB default too small for EP>=32; 16 GiB (matches #324).
     export MORI_SHMEM_HEAP_SIZE="${MORI_SHMEM_HEAP_SIZE:-17179869184}"
-    if [ -n "${NIXL_COOKBOOK_PATH:-}" ]; then
-        export PYTHONPATH="${NIXL_COOKBOOK_PATH}/proxy${PYTHONPATH:+:$PYTHONPATH}"
-    fi
 }
 
 _moriio_build_kv_transfer_config() {
@@ -299,143 +296,56 @@ connector_start_proxy() {
     # vllm_router: production router with --kv-connector moriio (needs the binary on
     #   PATH or ROUTER_BINARY set); includes a registration gate so the benchmark
     #   doesn't fire before prefill+decode register (else every request 503s).
-    # moriio_toy: in-image toy proxy; resolves the script across the online_serving/
-    #   -> disaggregated/ path move.
-    # Sets BENCHMARK_PORT (router->ROUTER_PORT, toy->PROXY_PORT) for the driver.
+    # Sets BENCHMARK_PORT (= ROUTER_PORT) for the driver.
     sleep 10
-    if [ "$PROXY_TYPE" == "vllm_router" ]; then
-        local PREFILL_URL="http://${PREFILL_MASTER_ADDR}:${SERVE_PORT}"
-        local DECODE_URL="http://${DECODE_MASTER_ADDR}:${SERVE_PORT}"
-        # Router intra-node DP size = per-node DP rank count (GPUS_PER_NODE).
-        local _router_dp_local="${DP_PARALLEL_SIZE_LOCAL}"
-        echo "Starting vllm-router (MoRIIO): HTTP ${ROUTER_PORT}"
-        echo "  prefill=${PREFILL_URL}  decode=${DECODE_URL}  dp_local=${_router_dp_local}"
-        local ROUTER_BIN="${ROUTER_BINARY:-$(command -v vllm-router 2>/dev/null || true)}"
-        [ -z "${ROUTER_BIN}" ] && [ -x /usr/local/bin/vllm-router ] && ROUTER_BIN=/usr/local/bin/vllm-router
-        if [ -z "${ROUTER_BIN}" ] || [ ! -x "${ROUTER_BIN}" ]; then
-            echo "Error: vllm-router not found. The image bakes /usr/local/bin/vllm-router; set ROUTER_BINARY=<path> or PROXY_TYPE=moriio_toy." \
-                | tee -a /run_logs/${SLURM_JOB_ID}/proxy_NODE${NODE_RANK}.log
-            exit 1
-        fi
-        echo "Using vllm-router binary: ${ROUTER_BIN}"
-        local _PROMETHEUS_PORT="${VLLM_ROUTER_PROMETHEUS_PORT:-29000}"
-        local -a _router_args=(
-            --host 0.0.0.0
-            --port "${ROUTER_PORT}"
-            --vllm-pd-disaggregation
-            --kv-connector moriio
-            --prefill "${PREFILL_URL}"
-            --decode "${DECODE_URL}"
-            --vllm-discovery-address "0.0.0.0:${PROXY_PING_PORT}"
-            --intra-node-data-parallel-size "${_router_dp_local}"
-            --policy round_robin
-            --prefill-policy round_robin
-            --decode-policy round_robin
-            --log-level "${VLLM_ROUTER_LOG_LEVEL:-info}"
-            --prometheus-port "${_PROMETHEUS_PORT}"
-        )
-        # Ravi 2P2D KV-notify: --moriio-dp-size = prefill DP world. Latest
-        # upstream may have folded this into discovery; pass it only if present.
-        if [[ "${ROUTER_SKIP_MORIIO_DP_SIZE:-1}" != "1" ]] && \
-           "${ROUTER_BIN}" --help 2>&1 | grep -q -- '--moriio-dp-size'; then
-            _router_args+=(--moriio-dp-size "${PREFILL_DP_SIZE}")
-            echo "  --moriio-dp-size ${PREFILL_DP_SIZE}"
-        fi
-        "${ROUTER_BIN}" "${_router_args[@]}" \
-            > >(tee /run_logs/${SLURM_JOB_ID}/vllm_router_NODE${NODE_RANK}.log >/dev/null) 2>&1 &
-        proxy_pid=$!
-        BENCHMARK_PORT=${ROUTER_PORT}
-    else
-        local _PROXY_SCRIPT=""
-        for _candidate in \
-            "${MORIIO_TOY_PROXY:-}" \
-            "${NIXL_COOKBOOK_PATH:-}/proxy/moriio_pd_proxy.py" \
-            "/app/vllm/examples/disaggregated/disaggregated_serving/moriio_toy_proxy_server.py" \
-            "/app/vllm/examples/online_serving/disaggregated_serving/moriio_toy_proxy_server.py" \
-            "$(python3 -c 'import vllm, os; print(os.path.join(os.path.dirname(vllm.__file__), "..", "examples", "disaggregated", "disaggregated_serving", "moriio_toy_proxy_server.py"))' 2>/dev/null)"; do
-            if [ -n "${_candidate}" ] && [ -f "${_candidate}" ]; then
-                _PROXY_SCRIPT="${_candidate}"; break
-            fi
-        done
-        if [ -z "${_PROXY_SCRIPT}" ]; then
-            echo "Error: moriio_toy_proxy_server.py not found (upstream vLLM path changed?)" \
-                | tee -a /run_logs/${SLURM_JOB_ID}/proxy_NODE${NODE_RANK}.log
-            exit 1
-        fi
-        if [[ "${_PROXY_SCRIPT}" == *moriio_pd_proxy.py ]]; then
-            local _PROXY_LOG_LEVEL="${PROXY_LOG_LEVEL:-DEBUG}"
-            local _PROXY_ARGS=(
-                --port "${PROXY_PORT}"
-                --discovery-port "${PROXY_PING_PORT}"
-                --use-discovery
-                --dp-size-local "${DP_PARALLEL_SIZE_LOCAL}"
-                --log-level "${_PROXY_LOG_LEVEL}"
-                --max-concurrency "${PROXY_MAX_CONCURRENCY:-512}"
-            )
-            if [[ -n "${PROXY_ROUTE_DP:-}" && "${PROXY_ROUTE_DP}" != "0" ]]; then
-                _PROXY_ARGS+=(--route-dp-size "${PROXY_ROUTE_DP}")
-            fi
-            local _PREFILL_URL="http://${PREFILL_MASTER_ADDR}:${SERVE_PORT}"
-            local _DECODE_URL="http://${DECODE_MASTER_ADDR}:${SERVE_PORT}"
-            # Headless children never bind :20005 and never take HTTP. Same as
-            # vllm-router: one master URL per role. MORIIO_CHILD_HTTP=1 is the
-            # only path that POSTs ranks 8+ to a child, so keep every pod URL.
-            if [[ "${MORIIO_CHILD_HTTP:-0}" == "1" ]]; then
-                _PROXY_ARGS+=(--expect-prefill "${xP}" --expect-decode "${yD}")
-                local _i
-                for ((_i=0; _i<xP && _i<${#IP_ARRAY[@]}; _i++)); do
-                    _PROXY_ARGS+=(--prefill "http://${IP_ARRAY[$_i]}:${SERVE_PORT}")
-                done
-                for ((_i=xP; _i<${#IP_ARRAY[@]}; _i++)); do
-                    _PROXY_ARGS+=(--decode "http://${IP_ARRAY[$_i]}:${SERVE_PORT}")
-                done
-            else
-                _PROXY_ARGS+=(
-                    --expect-prefill 1
-                    --expect-decode 1
-                    --prefill "${_PREFILL_URL}"
-                    --decode "${_DECODE_URL}"
-                )
-            fi
-            echo "Starting python PD proxy (DSV4 MoRI-EP): ${_PROXY_SCRIPT}"
-            echo "  prefill=${_PREFILL_URL}  decode=${_DECODE_URL}  child_http=${MORIIO_CHILD_HTTP:-0}"
-            python "${_PROXY_SCRIPT}" "${_PROXY_ARGS[@]}" \
-                > >(tee -a /run_logs/${SLURM_JOB_ID}/proxy_NODE${NODE_RANK}.log >/dev/null) 2>&1 &
-            proxy_pid=$!
-            BENCHMARK_PORT=${PROXY_PORT}
-            local _PROXY_LOG="/run_logs/${SLURM_JOB_ID}/proxy_NODE${NODE_RANK}.log"
-            local _z=0
-            while [ "${_z}" -lt 15 ]; do
-                if grep -q "ZMQ discovery listening" "${_PROXY_LOG}" 2>/dev/null; then
-                    break
-                fi
-                if grep -q "Address already in use" "${_PROXY_LOG}" 2>/dev/null; then
-                    echo "Error: ZMQ ${PROXY_PING_PORT} bind failed. HTTP would 503 every request." >&2
-                    grep -E "Address already in use|ZMQ" "${_PROXY_LOG}" | head -n 8 >&2 || true
-                    exit 1
-                fi
-                sleep 1; _z=$((_z + 1))
-            done
-            if ! grep -q "ZMQ discovery listening" "${_PROXY_LOG}" 2>/dev/null; then
-                echo "Error: ZMQ discovery did not listen on ${PROXY_PING_PORT} within 15s." >&2
-                tail -n 30 "${_PROXY_LOG}" >&2 || true
-                exit 1
-            fi
-        else
-            echo "Starting MoRI toy proxy: ${_PROXY_SCRIPT}"
-            python "${_PROXY_SCRIPT}" \
-                > >(tee -a /run_logs/${SLURM_JOB_ID}/proxy_NODE${NODE_RANK}.log >/dev/null) 2>&1 &
-            proxy_pid=$!
-            BENCHMARK_PORT=${PROXY_PORT}
-        fi
+    local PREFILL_URL="http://${PREFILL_MASTER_ADDR}:${SERVE_PORT}"
+    local DECODE_URL="http://${DECODE_MASTER_ADDR}:${SERVE_PORT}"
+    # Router intra-node DP size = per-node DP rank count (GPUS_PER_NODE).
+    local _router_dp_local="${DP_PARALLEL_SIZE_LOCAL}"
+    echo "Starting vllm-router (MoRIIO): HTTP ${ROUTER_PORT}"
+    echo "  prefill=${PREFILL_URL}  decode=${DECODE_URL}  dp_local=${_router_dp_local}"
+    local ROUTER_BIN="${ROUTER_BINARY:-$(command -v vllm-router 2>/dev/null || true)}"
+    [ -z "${ROUTER_BIN}" ] && [ -x /usr/local/bin/vllm-router ] && ROUTER_BIN=/usr/local/bin/vllm-router
+    if [ -z "${ROUTER_BIN}" ] || [ ! -x "${ROUTER_BIN}" ]; then
+        echo "Error: vllm-router not found. The image bakes /usr/local/bin/vllm-router; or set ROUTER_BINARY=<path>." \
+            | tee -a /run_logs/${SLURM_JOB_ID}/proxy_NODE${NODE_RANK}.log
+        exit 1
     fi
+    echo "Using vllm-router binary: ${ROUTER_BIN}"
+    local _PROMETHEUS_PORT="${VLLM_ROUTER_PROMETHEUS_PORT:-29000}"
+    local -a _router_args=(
+        --host 0.0.0.0
+        --port "${ROUTER_PORT}"
+        --vllm-pd-disaggregation
+        --kv-connector moriio
+        --prefill "${PREFILL_URL}"
+        --decode "${DECODE_URL}"
+        --vllm-discovery-address "0.0.0.0:${PROXY_PING_PORT}"
+        --intra-node-data-parallel-size "${_router_dp_local}"
+        --policy round_robin
+        --prefill-policy round_robin
+        --decode-policy round_robin
+        --log-level "${VLLM_ROUTER_LOG_LEVEL:-info}"
+        --prometheus-port "${_PROMETHEUS_PORT}"
+    )
+    # Ravi 2P2D KV-notify: --moriio-dp-size = prefill DP world. Latest
+    # upstream may have folded this into discovery; pass it only if present.
+    if [[ "${ROUTER_SKIP_MORIIO_DP_SIZE:-1}" != "1" ]] && \
+       "${ROUTER_BIN}" --help 2>&1 | grep -q -- '--moriio-dp-size'; then
+        _router_args+=(--moriio-dp-size "${PREFILL_DP_SIZE}")
+        echo "  --moriio-dp-size ${PREFILL_DP_SIZE}"
+    fi
+    "${ROUTER_BIN}" "${_router_args[@]}" \
+        > >(tee /run_logs/${SLURM_JOB_ID}/vllm_router_NODE${NODE_RANK}.log >/dev/null) 2>&1 &
+    proxy_pid=$!
+    BENCHMARK_PORT=${ROUTER_PORT}
     export BENCHMARK_PORT
 
     echo "Proxy (${PROXY_TYPE}) ready for benchmarking on ${host_name}:${host_ip}:${BENCHMARK_PORT}"
 
-    # Router-registration gate (vllm_router only): wait for prefill+decode to
-    # register via discovery before benchmarking, else requests 503.
-    if [ "$PROXY_TYPE" == "vllm_router" ]; then
+    # Router-registration gate: wait for prefill+decode to register via
+    # discovery before benchmarking, else requests 503.
+    {
         local _ROUTER_LOG="/run_logs/${SLURM_JOB_ID}/vllm_router_NODE${NODE_RANK}.log"
         local _REG_TIMEOUT="${ROUTER_REGISTER_TIMEOUT_S:-300}" _waited=0
         echo "Waiting up to ${_REG_TIMEOUT}s for prefill+decode to register with the router..."
@@ -447,9 +357,7 @@ connector_start_proxy() {
             sleep 5; _waited=$((_waited + 5))
         done
         [ "${_waited}" -ge "${_REG_TIMEOUT}" ] && echo "WARNING: router registration not confirmed in ${_REG_TIMEOUT}s; proceeding."
-    else
-        sleep 20
-    fi
+    }
 
     # Always run, including NIAH. Chat QA on /v1/chat/completions — a bare
     # /v1/completions stem continues OpenAI JSON dumps (433991). NIAH stays

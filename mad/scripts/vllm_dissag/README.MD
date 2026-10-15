@@ -56,8 +56,8 @@ QOS=low ./run_wideep_bench.sh smoke dsv4pro 4p4d --time 04:00:00 --dry-run
 | TOPO | `1p1d`/`ep8`, `2p2d`/`ep16`, `3p3d`/`ep24`, `4p4d`/`ep32`, asymmetric `1p2d`/`2p1d`/`2p3d`/`3p2d` |
 
 Flags: `--image main|<tag>`, `--time`, `--exclude`, `--nodelist`, `--name`,
-`--after JOBID`, `--dry-run`. `PROXY_TYPE=vllm_router` uses the baked router
-instead of the Python proxy (`proxy/moriio_pd_proxy.py`, the default).
+`--after JOBID`, `--dry-run`. The proxy is the vllm-router baked into the
+image (`PROXY_TYPE=vllm_router`, the default).
 
 Flash NIAH primes the answer with `1.`; Pro is never primed. Never pass
 `--enforce-eager`; `DSV4_EAGER=1` runs decode with `cudagraph_mode: NONE`.
@@ -69,13 +69,12 @@ Flash NIAH primes the answer with `1.`; Pro is never primed. Never pass
 | `run_wideep_bench.sh` | submit wrapper: derives every knob from BENCH/MODEL/TOPO |
 | `run_xPyD_models.slurm` | per-node `docker run` of `vllm_disagg.sh` |
 | `vllm_disagg.sh` | in-container driver: roles, models.yaml, workers, proxy, bench |
-| `connectors/moriio.sh`, `connectors/moriio.env` | MoRIIO serve argv, platform env, proxy/router start, curl |
+| `connectors/moriio.sh`, `connectors/moriio.env` | MoRIIO serve argv, platform env, vllm-router start, curl |
 | `parallelism.sh` | DP role helpers |
 | `models.yaml` | per-model serve flags + env |
 | `benchmark_*.sh`, `benchmark_*.py` | sweep / NIAH / MRCR / validate / accuracy |
 | `niah_score.py`, `mrcr_lib.py`, `fetch_mrcr.py` | NIAH scoring, MRCR loader, login-side MRCR stager |
 | `benchmark_parser.py`, `parse_to_csv.py` | result tables and madengine `perf.csv` |
 | `socket_barrier.py`, `socket_wait.py`, `tcp_listen.sh` | cross-node rendezvous |
-| `proxy/` | Python PD proxy |
 | `build_vllm_main_image.slurm` | image build + push on a compute node |
 | `tests/run_all.sh` | offline suites (no cluster, no GPU) |
