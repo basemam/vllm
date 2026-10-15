@@ -91,6 +91,10 @@ _has "$(ls "$DIR"/patches/)" "apply_mori_trim_dispatch.py" "patches/ has the MoR
 _count "$(ls "$DIR"/patches/apply_*.py)" "apply_" 4 "patches/ holds exactly four patches"
 _count "$(cat "$DIR/models.yaml")" 'dp_flags: "--tokenizer-mode deepseek_v4 --disable-hybrid-kv-cache-manager --no-async-scheduling"' 2 "both DSV4 models run with HMA and async scheduling off"
 _count "$(cat "$DIR/models.yaml")" 'VLLM_USE_V2_MODEL_RUNNER: "0"' 2 "both DSV4 models run the V1 model runner"
+_has "$(cat "$DIR/run_wideep_bench.sh")" 'MORI_PROXY_PING_PORT="${MORI_PROXY_PING_PORT:-31367}"' "router discovery port defaults below the ephemeral range"
+_has "$(cat "$DIR/connectors/moriio.sh")" "did not register with the router" "router registration timeout is fatal"
+_has "$(cat "$DIR/connectors/moriio.sh")" "could not bind discovery port" "router discovery bind failure is fatal"
+_hasnot "$(cat "$DIR/connectors/moriio.sh" "$DIR/run_wideep_bench.sh" "$DIR/vllm_disagg.sh")" ":-36367" "no default inside the ephemeral range"
 
 # Apply the patches to this fork's own connector source, so anchor drift on the
 # vLLM tree the image is built from fails here rather than at boot.
