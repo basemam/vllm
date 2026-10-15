@@ -27,11 +27,15 @@
 #     indexer and MLA caches differ: 476606).
 #   - async scheduling off: main enables it by default, and it has hung PD
 #     decode before (476877 decode stalled on its first bench request).
+#   - V1 model runner: under Model Runner V2 (main's default) one decode DP
+#     rank's first real forward deadlocked the MoRI EP all2all against its
+#     peers' dummy batches, all 16 GPUs spinning at 100% (477236).
 # Weights: /shared_inference/models_blog/DeepSeek-V4-Flash-FP8
 #   43L, hidden 4096, 256 experts top-6, fp8.
 DeepSeek-V4-Flash-FP8:
   env:
     VLLM_USE_V1: "1"
+    VLLM_USE_V2_MODEL_RUNNER: "0"
     VLLM_ROCM_USE_AITER: "1"
     VLLM_ROCM_USE_AITER_PAGED_ATTN: "0"
     VLLM_ROCM_USE_AITER_RMSNORM: "1"
@@ -65,6 +69,7 @@ DeepSeek-V4-Flash-FP8:
 DeepSeek-V4-Pro-FP8:
   env:
     VLLM_USE_V1: "1"
+    VLLM_USE_V2_MODEL_RUNNER: "0"
     VLLM_ROCM_USE_AITER: "1"
     VLLM_ROCM_USE_AITER_PAGED_ATTN: "0"
     VLLM_ROCM_USE_AITER_RMSNORM: "1"
