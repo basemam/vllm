@@ -9,7 +9,7 @@ This is NOT product NIAH. Do not set NIAH_LIST_PRIME. Flash-first slice is
 until the window is raised.
 
 Usage (inside the container, via benchmark_mrcr.sh):
-  MRCR_URL=http://127.0.0.1:10001 MRCR_MODEL=... python3 benchmark_mrcr.py
+  MRCR_URL=http://127.0.0.1:30000 MRCR_MODEL=... python3 benchmark_mrcr.py
 """
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ from mrcr_lib import (  # noqa: E402
     iter_data_rows,
 )
 
-URL = os.environ.get("MRCR_URL") or os.environ.get("NIAH_URL") or "http://127.0.0.1:10001"
+URL = os.environ.get("MRCR_URL") or os.environ.get("NIAH_URL") or "http://127.0.0.1:30000"
 MODEL = os.environ.get("MRCR_MODEL") or os.environ.get("NIAH_MODEL") or os.environ.get(
     "MODEL_PATH", "unknown"
 )

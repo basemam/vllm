@@ -16,8 +16,7 @@ connector_init() {
     RPC_PORT="${MORI_RPC_PORT:-13345}"
     SERVE_PORT="${MORI_SERVE_PORT:-20005}"
     KV_PORT="${MORI_KV_PORT:-9711}"
-    PROXY_PORT="${MORI_PROXY_PORT:-10001}"
-    PROXY_PING_PORT="${MORI_PROXY_PING_PORT:-31367}"
+    ROUTER_DISCOVERY_PORT="${ROUTER_DISCOVERY_PORT:-31367}"
     LOCAL_PING_PORT="${MORI_LOCAL_PING_PORT:-61555}"
     HANDSHAKE_PORT="${MORI_HANDSHAKE_PORT:-8405}"
     NOTIFY_PORT="${MORI_NOTIFY_PORT:-61005}"
@@ -120,7 +119,7 @@ connector_setup_env() {
 _moriio_build_kv_transfer_config() {
     local kv_role="$1"
     # DSV4: some image builds ignore VLLM_MORIIO_QP_PER_TRANSFER env; extra_config is the path.
-    local extra='"proxy_ip":"'"${MASTER_ADDR}"'","proxy_port":"'"${PROXY_PORT}"'","proxy_ping_port":"'"${PROXY_PING_PORT}"'","http_port":"'"${SERVE_PORT}"'","local_ping_port":"'"${LOCAL_PING_PORT}"'","handshake_port":"'"${HANDSHAKE_PORT}"'","notify_port":"'"${NOTIFY_PORT}"'"'
+    local extra='"proxy_ip":"'"${MASTER_ADDR}"'","proxy_port":"'"${PROXY_PORT}"'","proxy_ping_port":"'"${ROUTER_DISCOVERY_PORT}"'","http_port":"'"${SERVE_PORT}"'","local_ping_port":"'"${LOCAL_PING_PORT}"'","handshake_port":"'"${HANDSHAKE_PORT}"'","notify_port":"'"${NOTIFY_PORT}"'"'
     if [ "${MODEL_NAME:-}" = "DeepSeek-V4-Flash-FP8" ] || [ "${MODEL_NAME:-}" = "DeepSeek-V4-Pro-FP8" ]; then
         extra="${extra},\"qp_per_transfer\":${VLLM_MORIIO_QP_PER_TRANSFER:-4},\"num_workers\":${VLLM_MORIIO_NUM_WORKERS:-4},\"post_batch_size\":${VLLM_MORIIO_POST_BATCH_SIZE:--1}"
     fi
@@ -320,7 +319,7 @@ connector_start_proxy() {
         --kv-connector moriio
         --prefill "${PREFILL_URL}"
         --decode "${DECODE_URL}"
-        --vllm-discovery-address "0.0.0.0:${PROXY_PING_PORT}"
+        --vllm-discovery-address "0.0.0.0:${ROUTER_DISCOVERY_PORT}"
         --intra-node-data-parallel-size "${_router_dp_local}"
         --policy round_robin
         --prefill-policy round_robin
@@ -355,10 +354,10 @@ connector_start_proxy() {
                 echo "Router registration complete after ${_waited}s."; break
             fi
             if grep -qa "Failed to bind ZMQ socket" "${_ROUTER_LOG}" 2>/dev/null; then
-                echo "ERROR: vllm-router could not bind discovery port ${PROXY_PING_PORT}; set MORI_PROXY_PING_PORT to a free port." >&2
+                echo "ERROR: vllm-router could not bind discovery port ${ROUTER_DISCOVERY_PORT}; set ROUTER_DISCOVERY_PORT to a free port." >&2
                 grep -a "Failed to bind ZMQ socket" "${_ROUTER_LOG}" | head -1 >&2
                 source "${SCRIPT_DIR}/tcp_listen.sh"
-                tcp_listen_dump_port "${PROXY_PING_PORT}" >&2 || true
+                tcp_listen_dump_port "${ROUTER_DISCOVERY_PORT}" >&2 || true
                 exit 1
             fi
             sleep 5; _waited=$((_waited + 5))
