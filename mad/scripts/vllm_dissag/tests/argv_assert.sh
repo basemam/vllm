@@ -88,7 +88,7 @@ _has "$(ls "$DIR"/patches/)" "apply_moriio_dsv4_attn_backend_fix.py" "patches/ h
 _has "$(ls "$DIR"/patches/)" "apply_moriio_dsv4_mixed_block_size_fix.py" "patches/ has the mixed-block-size fix"
 _has "$(ls "$DIR"/patches/)" "apply_kv_cache_promote_bounded_replay_fix.py" "patches/ has the SWA-promotion fix"
 _count "$(ls "$DIR"/patches/apply_*.py)" "apply_" 3 "patches/ holds exactly three patches"
-_count "$(cat "$DIR/models.yaml")" 'dp_flags: "--tokenizer-mode deepseek_v4 --disable-hybrid-kv-cache-manager"' 2 "both DSV4 models run with HMA off"
+_count "$(cat "$DIR/models.yaml")" 'dp_flags: "--tokenizer-mode deepseek_v4 --disable-hybrid-kv-cache-manager --no-async-scheduling"' 2 "both DSV4 models run with HMA and async scheduling off"
 
 # Apply the patches to this fork's own connector source, so anchor drift on the
 # vLLM tree the image is built from fails here rather than at boot.
