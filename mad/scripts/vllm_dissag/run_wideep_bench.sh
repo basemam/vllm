@@ -194,7 +194,7 @@ ROUTER_SKIP_MORIIO_DP_SIZE="${ROUTER_SKIP_MORIIO_DP_SIZE:-0}"
 # Router discovery port. Keep it below ip_local_port_range (32768+): prefill
 # starts first on the router node and its outgoing connections can take an
 # ephemeral port as their source, so the router then fails to bind (218629, 477443).
-MORI_PROXY_PING_PORT="${MORI_PROXY_PING_PORT:-31367}"
+ROUTER_DISCOVERY_PORT="${ROUTER_DISCOVERY_PORT:-31367}"
 
 # --- IMAGE ---
 case "${IMAGE_ARG}" in
@@ -229,7 +229,7 @@ elif [[ -n "${DECODE_CUDAGRAPH_MODE:-}" ]]; then
 fi
 EXTRA_ENV+=(VLLM_LOGGING_LEVEL="${VLLM_LOGGING_LEVEL:-DEBUG}")
 EXTRA_ENV+=(CURL_SUITE=short)
-EXTRA_ENV+=(MORI_PROXY_PING_PORT="$MORI_PROXY_PING_PORT")
+EXTRA_ENV+=(ROUTER_DISCOVERY_PORT="$ROUTER_DISCOVERY_PORT")
 
 if [[ "$BENCH" == "niah" || "$BENCH" == "validate" ]]; then
     # hybrid = system+user through the DeepSeek template plus a restatement
@@ -309,7 +309,7 @@ unset SLURM_NNODES SLURM_JOB_NUM_NODES SLURM_JOB_NODELIST || true
 echo "=== WideEP bench plan ==="
 echo "BENCH=$BENCH  MODEL=$MODEL_NAME  TOPO=$TOPO  EP=$EP  xP=$xP yD=$yD  N=$N"
 echo "IMAGE=$DOCKER_IMAGE_NAME"
-echo "PROXY_TYPE=${PROXY_TYPE:-vllm_router}  SKIP_MORIIO_DP=${ROUTER_SKIP_MORIIO_DP_SIZE}  PING=${MORI_PROXY_PING_PORT}  WIDE_EP=1"
+echo "PROXY_TYPE=${PROXY_TYPE:-vllm_router}  SKIP_MORIIO_DP=${ROUTER_SKIP_MORIIO_DP_SIZE}  DISCOVERY=${ROUTER_DISCOVERY_PORT}  WIDE_EP=1"
 echo "TIME=$TIME_ARG"
 [[ "$BENCH" == "smoke" || "$BENCH" == "validate" ]] && echo "SMOKE CON=${BENCHMARK_CON:-default}  COMBOS=$BENCHMARK_COMBINATIONS  STEP_SEC_PER_TOK=${STEP_SEC_PER_TOK:-}  STEP_TIMEOUT=${STEP_TIMEOUT:-}"
 [[ "$BENCH" == "niah" || "$BENCH" == "validate" ]] && echo "NIAH_METHOD=${NIAH_METHOD:-}  NIAH_WORDS=$NIAH_WORDS  NIAH_SEEDS=$NIAH_SEEDS  HALT=$NIAH_HALT_ON_FAIL  MAXTOK=${NIAH_MAXTOK:-}  WARMUP=${NIAH_WARMUP:-}  TIMEOUT=${NIAH_TIMEOUT:-}  WRAP=0  TERSE=${NIAH_TERSE:-0}  STOP_BLANK=${NIAH_STOP_BLANK:-0}  MINTOK=${NIAH_MIN_TOKENS:-0}  PRIME=${NIAH_LIST_PRIME:-}  STOP=${NIAH_STOP:-}  LOGPROBS=${NIAH_LOGPROBS:-0}"
@@ -353,7 +353,7 @@ export DOCKER_IMAGE_NAME PYTHONUNBUFFERED=1
 export PROXY_TYPE="${PROXY_TYPE:-vllm_router}"
 export CONNECTOR=moriio WIDE_EP=1
 export xP yD MODEL_NAME BENCHMARK_SCRIPT
-export ROUTER_SKIP_MORIIO_DP_SIZE MORI_PROXY_PING_PORT
+export ROUTER_SKIP_MORIIO_DP_SIZE ROUTER_DISCOVERY_PORT
 if [[ "$BENCH" == "smoke" || "$BENCH" == "validate" ]]; then
     export BENCHMARK_COMBINATIONS BENCHMARK_CON
     [[ -n "${STEP_SEC_PER_TOK:-}" ]] && export STEP_SEC_PER_TOK

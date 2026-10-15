@@ -377,7 +377,7 @@ def _fail_side(err):
     if "decode" in e:
         return "decode — FAIL_SOURCE=decode in proxy log"
     if "connection" in e or "refused" in e:
-        return "proxy — connection (not listening :10001)"
+        return "router — connection (not listening :30000)"
     return "proxy-or-unknown — grep FAIL_SOURCE= in proxy_NODE0.log"
 
 

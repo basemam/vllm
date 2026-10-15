@@ -12,7 +12,7 @@ and grades only the text after </think>; give it ACC_MAXTOK=4096 or more,
 because an unclosed reasoning block grades as TRUNCATED, not FAIL.
 
 Usage (inside the container, via benchmark_accuracy.sh):
-  ACC_URL=http://127.0.0.1:10001 ACC_MODEL=... python3 benchmark_accuracy.py
+  ACC_URL=http://127.0.0.1:30000 ACC_MODEL=... python3 benchmark_accuracy.py
 """
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ from mrcr_lib import ASSISTANT, BOS, THINK_END, USER  # noqa: E402
 
 THINK_START = "<think>"
 
-URL = os.environ.get("ACC_URL") or "http://127.0.0.1:10001"
+URL = os.environ.get("ACC_URL") or "http://127.0.0.1:30000"
 MODEL = os.environ.get("ACC_MODEL") or os.environ.get("MODEL_PATH", "unknown")
 THINKING = os.environ.get("ACC_THINKING", "chat").strip().lower()
 MAXTOK = int(os.environ.get("ACC_MAXTOK") or (4096 if THINKING == "thinking" else 1024))
