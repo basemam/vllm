@@ -262,6 +262,10 @@ print(f'MODEL_CONFIG_PREFILL={shlex.quote(compose(prefill))}')
 print(f'MODEL_CONFIG_DECODE={shlex.quote(compose(decode))}')
 PY
 )"
+    if [[ -n "${MAX_NUM_SEQS:-}" ]]; then
+        MODEL_CONFIG_PREFILL="$(sed -E "s/--max-num-seqs [0-9]+/--max-num-seqs ${MAX_NUM_SEQS}/" <<<"${MODEL_CONFIG_PREFILL}")"
+        MODEL_CONFIG_DECODE="$(sed -E "s/--max-num-seqs [0-9]+/--max-num-seqs ${MAX_NUM_SEQS}/" <<<"${MODEL_CONFIG_DECODE}")"
+    fi
     echo "[vllm_disagg] model flags (${PARALLEL_MODE}): prefill='${MODEL_CONFIG_PREFILL}' decode='${MODEL_CONFIG_DECODE}'"
 fi
 export MODEL_CONFIG_PREFILL MODEL_CONFIG_DECODE

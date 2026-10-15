@@ -230,6 +230,18 @@ fi
 EXTRA_ENV+=(VLLM_LOGGING_LEVEL="${VLLM_LOGGING_LEVEL:-DEBUG}")
 EXTRA_ENV+=(CURL_SUITE=short)
 EXTRA_ENV+=(ROUTER_DISCOVERY_PORT="$ROUTER_DISCOVERY_PORT")
+# MORI_TRIM_DISPATCH=0 runs stock MoRI dispatch (the trim patch is still applied).
+[[ -n "${MORI_TRIM_DISPATCH:-}" ]] && EXTRA_ENV+=(MORI_TRIM_DISPATCH="$MORI_TRIM_DISPATCH")
+# The router reaches the 8 DP ranks behind each URL, so a role serves at most
+# 8 x max-num-seqs (4 in models.yaml) sequences. MAX_NUM_SEQS raises that for
+# both roles, and decode graph capture follows unless CUDAGRAPH_CAPTURE_SIZES is set.
+if [[ -n "${MAX_NUM_SEQS:-}" ]]; then
+    EXTRA_ENV+=(MAX_NUM_SEQS="$MAX_NUM_SEQS")
+    if [[ -z "${CUDAGRAPH_CAPTURE_SIZES:-}" ]]; then
+        _cs=""; for ((_s = 1; _s <= MAX_NUM_SEQS; _s *= 2)); do _cs+="${_cs:+ }${_s}"; done
+        EXTRA_ENV+=(CUDAGRAPH_CAPTURE_SIZES="$_cs")
+    fi
+fi
 
 if [[ "$BENCH" == "niah" || "$BENCH" == "validate" ]]; then
     # hybrid = system+user through the DeepSeek template plus a restatement
@@ -310,6 +322,7 @@ echo "=== WideEP bench plan ==="
 echo "BENCH=$BENCH  MODEL=$MODEL_NAME  TOPO=$TOPO  EP=$EP  xP=$xP yD=$yD  N=$N"
 echo "IMAGE=$DOCKER_IMAGE_NAME"
 echo "PROXY_TYPE=${PROXY_TYPE:-vllm_router}  SKIP_MORIIO_DP=${ROUTER_SKIP_MORIIO_DP_SIZE}  DISCOVERY=${ROUTER_DISCOVERY_PORT}  WIDE_EP=1"
+echo "MORI_TRIM=${MORI_TRIM_DISPATCH:-1}  MAX_NUM_SEQS=${MAX_NUM_SEQS:-yaml}"
 echo "TIME=$TIME_ARG"
 [[ "$BENCH" == "smoke" || "$BENCH" == "validate" ]] && echo "SMOKE CON=${BENCHMARK_CON:-default}  COMBOS=$BENCHMARK_COMBINATIONS  STEP_SEC_PER_TOK=${STEP_SEC_PER_TOK:-}  STEP_TIMEOUT=${STEP_TIMEOUT:-}"
 [[ "$BENCH" == "niah" || "$BENCH" == "validate" ]] && echo "NIAH_METHOD=${NIAH_METHOD:-}  NIAH_WORDS=$NIAH_WORDS  NIAH_SEEDS=$NIAH_SEEDS  HALT=$NIAH_HALT_ON_FAIL  MAXTOK=${NIAH_MAXTOK:-}  WARMUP=${NIAH_WARMUP:-}  TIMEOUT=${NIAH_TIMEOUT:-}  WRAP=0  TERSE=${NIAH_TERSE:-0}  STOP_BLANK=${NIAH_STOP_BLANK:-0}  MINTOK=${NIAH_MIN_TOKENS:-0}  PRIME=${NIAH_LIST_PRIME:-}  STOP=${NIAH_STOP:-}  LOGPROBS=${NIAH_LOGPROBS:-0}"
