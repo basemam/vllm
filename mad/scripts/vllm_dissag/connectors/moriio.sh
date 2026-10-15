@@ -17,7 +17,7 @@ connector_init() {
     SERVE_PORT="${MORI_SERVE_PORT:-20005}"
     KV_PORT="${MORI_KV_PORT:-9711}"
     PROXY_PORT="${MORI_PROXY_PORT:-10001}"
-    PROXY_PING_PORT="${MORI_PROXY_PING_PORT:-36367}"
+    PROXY_PING_PORT="${MORI_PROXY_PING_PORT:-31367}"
     LOCAL_PING_PORT="${MORI_LOCAL_PING_PORT:-61555}"
     HANDSHAKE_PORT="${MORI_HANDSHAKE_PORT:-8405}"
     NOTIFY_PORT="${MORI_NOTIFY_PORT:-61005}"
@@ -354,9 +354,19 @@ connector_start_proxy() {
                grep -qa "Add Decode"  "${_ROUTER_LOG}" 2>/dev/null; then
                 echo "Router registration complete after ${_waited}s."; break
             fi
+            if grep -qa "Failed to bind ZMQ socket" "${_ROUTER_LOG}" 2>/dev/null; then
+                echo "ERROR: vllm-router could not bind discovery port ${PROXY_PING_PORT}; set MORI_PROXY_PING_PORT to a free port." >&2
+                grep -a "Failed to bind ZMQ socket" "${_ROUTER_LOG}" | head -1 >&2
+                source "${SCRIPT_DIR}/tcp_listen.sh"
+                tcp_listen_dump_port "${PROXY_PING_PORT}" >&2 || true
+                exit 1
+            fi
             sleep 5; _waited=$((_waited + 5))
         done
-        [ "${_waited}" -ge "${_REG_TIMEOUT}" ] && echo "WARNING: router registration not confirmed in ${_REG_TIMEOUT}s; proceeding."
+        if [ "${_waited}" -ge "${_REG_TIMEOUT}" ]; then
+            echo "ERROR: prefill+decode did not register with the router in ${_REG_TIMEOUT}s; see ${_ROUTER_LOG}." >&2
+            exit 1
+        fi
     }
 
     # Always run, including NIAH. Chat QA on /v1/chat/completions — a bare

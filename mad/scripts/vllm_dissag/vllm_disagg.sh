@@ -327,7 +327,7 @@ if [ "$NODE_RANK" -eq 0 ]; then
     # that port closes — so a later manual proxy on :10001 is the teardown gate.
     if [[ "${HOLD_AFTER_READY:-0}" == "1" ]]; then
         echo "[hold] P+D Application startup complete. Skipping proxy/router and bench."
-        echo "[hold] Launch proxy on NODE0 :${PROXY_PORT:-10001} (discovery :${MORI_PROXY_PING_PORT:-36367})."
+        echo "[hold] Launch proxy on NODE0 :${PROXY_PORT:-10001} (discovery :${MORI_PROXY_PING_PORT:-31367})."
         echo "[hold] Engines stay until walltime, or until prefill master exits."
         wait "$local_worker_pid" || true
         echo "[hold] prefill master exited; sleeping until slurm walltime"

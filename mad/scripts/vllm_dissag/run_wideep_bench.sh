@@ -191,8 +191,10 @@ fi
 
 # vllm-router KV-notify wants --moriio-dp-size (passed when the binary has it).
 ROUTER_SKIP_MORIIO_DP_SIZE="${ROUTER_SKIP_MORIIO_DP_SIZE:-0}"
-# 36367 is in ip_local_port_range; a DP worker can steal it (218629).
-MORI_PROXY_PING_PORT="${MORI_PROXY_PING_PORT:-36367}"
+# Router discovery port. Keep it below ip_local_port_range (32768+): prefill
+# starts first on the router node and its outgoing connections can take an
+# ephemeral port as their source, so the router then fails to bind (218629, 477443).
+MORI_PROXY_PING_PORT="${MORI_PROXY_PING_PORT:-31367}"
 
 # --- IMAGE ---
 case "${IMAGE_ARG}" in
