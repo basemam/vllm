@@ -15,10 +15,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Upstream vLLM main + MoRI v1.2.3.post1 + vllm-router, unpatched; patches/ is
-# applied at boot.
+# basemam/vllm mori-scheduler-trim + MoRI v1.2.4 + vllm-router on the ROCm 7.2
+# base; patches/ (MoRIIO connector fixes) is applied at boot.
 # Dockerfile: mad/docker/vllm_main.dsv4.ubuntu.amd.Dockerfile.
-IMG_MAIN="rocm/pytorch-private:vllm-main-bf6c80c7e-mori-v1.2.3.post1-router"
+IMG_MAIN="rocm/pytorch-private:vllm-main-fff6f12c4-mori-v1.2.4-router"
 
 # Live exclude (override with EXCLUDE_NODES= or --exclude). Empty + --nodelist
 # means "only that pool".
@@ -199,7 +199,7 @@ ROUTER_DISCOVERY_PORT="${ROUTER_DISCOVERY_PORT:-31367}"
 # --- IMAGE ---
 case "${IMAGE_ARG}" in
     "")             DOCKER_IMAGE_NAME="${DOCKER_IMAGE_NAME:-$IMG_MAIN}"; IMG_TAG=main ;;
-    main|bf6c80c7e) DOCKER_IMAGE_NAME="$IMG_MAIN"; IMG_TAG=main ;;
+    main|fff6f12c4) DOCKER_IMAGE_NAME="$IMG_MAIN"; IMG_TAG=main ;;
     *)              DOCKER_IMAGE_NAME="$IMAGE_ARG"; IMG_TAG=custom ;;
 esac
 [[ "$DOCKER_IMAGE_NAME" != "$IMG_MAIN" ]] && IMG_TAG=custom
@@ -230,8 +230,6 @@ fi
 EXTRA_ENV+=(VLLM_LOGGING_LEVEL="${VLLM_LOGGING_LEVEL:-DEBUG}")
 EXTRA_ENV+=(CURL_SUITE=short)
 EXTRA_ENV+=(ROUTER_DISCOVERY_PORT="$ROUTER_DISCOVERY_PORT")
-# MORI_TRIM_DISPATCH=0 runs stock MoRI dispatch (the trim patch is still applied).
-[[ -n "${MORI_TRIM_DISPATCH:-}" ]] && EXTRA_ENV+=(MORI_TRIM_DISPATCH="$MORI_TRIM_DISPATCH")
 # The router reaches the 8 DP ranks behind each URL, so a role serves at most
 # 8 x max-num-seqs (4 in models.yaml) sequences. MAX_NUM_SEQS raises that for
 # both roles, and decode graph capture follows unless CUDAGRAPH_CAPTURE_SIZES is set.
@@ -322,7 +320,7 @@ echo "=== WideEP bench plan ==="
 echo "BENCH=$BENCH  MODEL=$MODEL_NAME  TOPO=$TOPO  EP=$EP  xP=$xP yD=$yD  N=$N"
 echo "IMAGE=$DOCKER_IMAGE_NAME"
 echo "PROXY_TYPE=${PROXY_TYPE:-vllm_router}  SKIP_MORIIO_DP=${ROUTER_SKIP_MORIIO_DP_SIZE}  DISCOVERY=${ROUTER_DISCOVERY_PORT}  WIDE_EP=1"
-echo "MORI_TRIM=${MORI_TRIM_DISPATCH:-1}  MAX_NUM_SEQS=${MAX_NUM_SEQS:-yaml}"
+echo "MAX_NUM_SEQS=${MAX_NUM_SEQS:-yaml}"
 echo "TIME=$TIME_ARG"
 [[ "$BENCH" == "smoke" || "$BENCH" == "validate" ]] && echo "SMOKE CON=${BENCHMARK_CON:-default}  COMBOS=$BENCHMARK_COMBINATIONS  STEP_SEC_PER_TOK=${STEP_SEC_PER_TOK:-}  STEP_TIMEOUT=${STEP_TIMEOUT:-}"
 [[ "$BENCH" == "niah" || "$BENCH" == "validate" ]] && echo "NIAH_METHOD=${NIAH_METHOD:-}  NIAH_WORDS=$NIAH_WORDS  NIAH_SEEDS=$NIAH_SEEDS  HALT=$NIAH_HALT_ON_FAIL  MAXTOK=${NIAH_MAXTOK:-}  WARMUP=${NIAH_WARMUP:-}  TIMEOUT=${NIAH_TIMEOUT:-}  WRAP=0  TERSE=${NIAH_TERSE:-0}  STOP_BLANK=${NIAH_STOP_BLANK:-0}  MINTOK=${NIAH_MIN_TOKENS:-0}  PRIME=${NIAH_LIST_PRIME:-}  STOP=${NIAH_STOP:-}  LOGPROBS=${NIAH_LOGPROBS:-0}"

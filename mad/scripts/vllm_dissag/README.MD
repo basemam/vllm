@@ -2,16 +2,16 @@
 
 Runs DeepSeek-V4-Flash-FP8 and DeepSeek-V4-Pro-FP8 as prefill/decode
 disaggregated serving on SLURM: MoRIIO KV transfer between roles, `-tp 1` +
-DP + MoRI expert parallelism inside each role. The image is stock upstream
-vLLM. The scripts in `patches/` are applied at boot on every node, before
-`vllm serve`, until they are baked into the image:
+DP + MoRI expert parallelism inside each role. The image builds vLLM from
+this fork's `mori-scheduler-trim` branch, which is upstream main plus two
+commits proposed upstream: the MoRI dispatch-output trim, and the SWA
+`bounded_replay` drop on HMA-off spec promotion. The scripts in `patches/`
+are MoRIIO-connector fixes applied at boot on every node, before `vllm serve`:
 
 | patch | why |
 |---|---|
 | `apply_moriio_dsv4_attn_backend_fix.py` | MoRIIO's generic MLA backend lookup rejects DSV4's `fp8_ds_mla` cache; point it at `DeepseekV4ROCMAiterMLASparseBackend` |
-| `apply_moriio_dsv4_mixed_block_size_fix.py` | DSV4 mixes 256-token MLA and 64-token SWA/indexer pages; MoRIIO's uniform `block_size` check would reject the register |
-| `apply_kv_cache_promote_bounded_replay_fix.py` | with HMA off, KV planning rebuilds `SlidingWindowMLASpec` as `MLAAttentionSpec` and forwards the SWA-only `bounded_replay` field, which the target rejects |
-| `apply_mori_trim_dispatch.py` | MoRI `dispatch()` returns a `world_size × max_num_tokens` receive buffer and the expert GEMMs run over all of it; trim it to this step's real token bound from `DPMetadata` (`MORI_TRIM_DISPATCH=0` in the container restores stock) |
+| `apply_moriio_dsv4_mixed_block_size_fix.py` | DSV4 mixes 256-token MLA and 64-token SWA/indexer pages; MoRIIO allows per-layer `block_size` only with HMA on and raises otherwise |
 
 A patch whose anchor no longer matches aborts the boot. Both models also run
 with `--disable-hybrid-kv-cache-manager` (HMA off, `models.yaml`): MoRIIO's
@@ -24,13 +24,14 @@ real forward deadlocked the MoRI EP all2all against its peers' dummy batches.
 ## Image
 
 `mad/docker/vllm_main.dsv4.ubuntu.amd.Dockerfile` builds, on top of
-`vllm/vllm-openai-rocm:base-nightly-<sha>`:
+`vllm/vllm-openai-rocm:base-nightly-rocm72-<sha>` (ROCm 7.2; AITER, FlyDSL,
+torch and triton come from the base):
 
-- vLLM from source (`VLLM_REF`, default upstream main `bf6c80c7e`)
-- MoRI from source (`MORI_REF=v1.2.3.post1`)
+- vLLM from source (`VLLM_REF`, default `fff6f12c4` on `basemam/vllm`)
+- MoRI from source (`MORI_REF=v1.2.4`)
 - vllm-router from source, installed at `/usr/local/bin/vllm-router`
 
-Pins are recorded in `/app/versions.txt` (`DSV4_PATCHES=none`). Build on a
+Pins are recorded in `/app/versions.txt` (`MORI_DISPATCH_TRIM=in-tree`). Build on a
 compute node, never on a login node or WSL:
 
 ```bash
@@ -39,8 +40,8 @@ sbatch --qos=low build_vllm_main_image.slurm
 # or by hand on an allocated node:
 docker build --ulimit nofile=1048576:1048576 \
   -f mad/docker/vllm_main.dsv4.ubuntu.amd.Dockerfile \
-  --build-arg BASE_IMAGE=vllm/vllm-openai-rocm:base-nightly-77154ca6116ae34cbfe314beef1016bde9b63989 \
-  -t rocm/pytorch-private:vllm-main-bf6c80c7e-mori-v1.2.3.post1-router mad/docker
+  --build-arg BASE_IMAGE=vllm/vllm-openai-rocm:base-nightly-rocm72-83c078d955cd6e0c63d3b12abe669c8de936a370 \
+  -t rocm/pytorch-private:vllm-main-fff6f12c4-mori-v1.2.4-router mad/docker
 ```
 
 ## Launching

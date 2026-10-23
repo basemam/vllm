@@ -1,31 +1,31 @@
 # syntax=docker/dockerfile:1
 # =============================================================================
-# vLLM main from source + MoRI from source + vllm-router. NO DSV4 patches.
+# vLLM main from source + MoRI from source + vllm-router.
 #
-# Base is upstream's published Dockerfile.rocm_base output for this era, which
-# supplies ROCm, torch, triton and AITER exactly as vLLM main pins them. On top
-# of it this file builds, in order:
+# Base is upstream's published Dockerfile.rocm_72_base output (the ROCm 7.2
+# image; ROCm 10 became upstream's default on 17 Oct, #58761), which supplies
+# ROCm, torch, triton, AITER and FlyDSL (AITER pins flydsl==0.4.0) exactly as
+# vLLM main pins them. On top of it this file builds, in order:
 #   1. MoRI          from source at MORI_REF
 #   2. vLLM          from source at VLLM_REF (basemam/vllm main), using the
 #                    same commands as upstream docker/Dockerfile.rocm
 #   3. vllm-router   from source at ROUTER_REF
 #
-# Pins (from docker/Dockerfile.rocm_base / Dockerfile.rocm at VLLM_REF):
+# Pins (from docker/Dockerfile.rocm_72_base / Dockerfile.rocm_72 at VLLM_REF):
 #   ROCm 7.2.3, torch ROCm/pytorch 733fca1 (release/2.13),
-#   triton ROCm/triton 669b31a, AITER v0.1.25         <- all from BASE_IMAGE
-#   (base-nightly-77154ca6 /app/versions.txt says AITER_BRANCH v0.1.25, one
-#   step ahead of the v0.1.24.post1 in Dockerfile.rocm_base at bf6c80c7e)
-#   MoRI v1.2.3.post1, triton_kernels 669b31ac        <- built here
+#   triton ROCm/triton 669b31a, AITER v0.1.26, flydsl 0.4.0  <- BASE_IMAGE
+#   MoRI v1.2.4 (upstream still pins v1.2.3.post1), triton_kernels 669b31ac
+#                                                            <- built here
 #
-# The MoRI combine fix is already upstream (vllm#56073). The dispatch trim is
-# not; this image is its unpatched reference.
+# The MoRI combine fix is already upstream (vllm#56073). The MoRI dispatch trim
+# and the SWA bounded_replay fix are commits on VLLM_REF, not boot patches.
 #
 # Build (compute node only, never login/WSL):
 #   docker build --ulimit nofile=1048576:1048576 \
 #     -f mad/docker/vllm_main.dsv4.ubuntu.amd.Dockerfile -t <tag> mad/docker
 # or: cd mad/scripts/vllm_dissag && sbatch --qos=low build_vllm_main_image.slurm
 # =============================================================================
-ARG BASE_IMAGE=vllm/vllm-openai-rocm:base-nightly-77154ca6116ae34cbfe314beef1016bde9b63989
+ARG BASE_IMAGE=vllm/vllm-openai-rocm:base-nightly-rocm72-83c078d955cd6e0c63d3b12abe669c8de936a370
 FROM ${BASE_IMAGE}
 ARG BASE_IMAGE
 
@@ -48,7 +48,7 @@ RUN sed -i -E 's#http://(archive|security)\.ubuntu\.com#https://\1.ubuntu.com#g'
     echo "BASE_IMAGE=${BASE_IMAGE}" >> /app/versions.txt && \
     python3 -c 'import torch; print(f"TORCH={torch.__version__} HIP={torch.version.hip}")' >> /app/versions.txt && \
     test -d "$(python3 -c 'import sysconfig;print(sysconfig.get_paths()["purelib"])')/aiter" && \
-    pip list 2>/dev/null | grep -iE '^(amd[-_])?aiter |^mori |^triton |^torch ' | sed 's/^/BASE_PKG /' >> /app/versions.txt
+    pip list 2>/dev/null | grep -iE '^(amd[-_])?aiter |^flydsl |^mori |^triton |^torch ' | sed 's/^/BASE_PKG /' >> /app/versions.txt
 
 # The base carries upstream CI's sccache (S3-backed). vLLM's setup.py uses
 # sccache whenever it is on PATH, and without AWS credentials it cannot start,
@@ -65,7 +65,7 @@ ENV SCCACHE_BUCKET= \
 # 1. MoRI from source. NIC vendor libs and proxy deps as in upstream mori_base.
 # -----------------------------------------------------------------------------
 ARG MORI_REPO=https://github.com/ROCm/mori.git
-ARG MORI_REF=v1.2.3.post1
+ARG MORI_REF=v1.2.4
 ARG NIC_BACKEND=all
 ARG AINIC_VERSION=1.117.5-a-77
 ARG UBUNTU_CODENAME=jammy
@@ -110,7 +110,7 @@ RUN git clone --recursive "${MORI_REPO}" /tmp/mori-src && \
 #    final_common, collapsed into one stage. setup.py builds vllm-rs itself.
 # -----------------------------------------------------------------------------
 ARG VLLM_REPO=https://github.com/basemam/vllm.git
-ARG VLLM_REF=bf6c80c7e80c2c88547a5caca3a3f9b1ea321f0b
+ARG VLLM_REF=fff6f12c4ec0c51f80220121ea83d1ce8de16c7e
 ARG ROCM_TRITON_KERNELS_COMMIT=669b31acc1dd1b3fd93286afd5db67f65d9f7557
 ENV VLLM_TARGET_DEVICE=rocm \
     CARGO_HOME=/root/.cargo \
@@ -185,8 +185,8 @@ ENV HSA_ENABLE_IPC_MODE_LEGACY=0 \
     COMGR_CACHE_DIR=/opt/vllm_cache/comgr
 
 RUN f="$(python3 -c 'import os,vllm;print(os.path.join(os.path.dirname(vllm.__file__),"model_executor/layers/fused_moe/prepare_finalize/mori.py"))')" && \
-    ! grep -q _mori_trim_rows "$f" && \
-    echo "DSV4_PATCHES=none" >> /app/versions.txt && \
+    grep -q _num_live_dispatch_rows "$f" && \
+    echo "MORI_DISPATCH_TRIM=in-tree" >> /app/versions.txt && \
     rm -rf /root/.mori /tmp/mori_jit_* && mkdir -p /root/.mori && \
     echo "=== Build versions ===" && cat /app/versions.txt
 

@@ -11,7 +11,7 @@
 #SBATCH --error=/shared_inference/%u/model_blog_logs/slurm-%j.err
 # ---------------------------------------------------------------------------
 # Build + push mad/docker/vllm_main.dsv4.ubuntu.amd.Dockerfile on a compute
-# node: vLLM main + MoRI + vllm-router from source, no DSV4 patches.
+# node: vLLM (VLLM_REF) + MoRI + vllm-router from source.
 #
 #   cd mad/scripts/vllm_dissag
 #   sbatch --qos=low build_vllm_main_image.slurm
@@ -20,10 +20,11 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-VLLM_REF="${VLLM_REF:-bf6c80c7e80c2c88547a5caca3a3f9b1ea321f0b}"
-BASE_IMAGE="${BASE_IMAGE:-vllm/vllm-openai-rocm:base-nightly-77154ca6116ae34cbfe314beef1016bde9b63989}"
+VLLM_REF="${VLLM_REF:-fff6f12c4ec0c51f80220121ea83d1ce8de16c7e}"
+BASE_IMAGE="${BASE_IMAGE:-vllm/vllm-openai-rocm:base-nightly-rocm72-83c078d955cd6e0c63d3b12abe669c8de936a370}"
+MORI_REF="${MORI_REF:-v1.2.4}"
 MAX_JOBS="${MAX_JOBS:-64}"
-TAG="${TAG:-rocm/pytorch-private:vllm-main-${VLLM_REF:0:9}-mori-v1.2.3.post1-router}"
+TAG="${TAG:-rocm/pytorch-private:vllm-main-${VLLM_REF:0:9}-mori-${MORI_REF}-router}"
 PUSH="${PUSH:-1}"
 
 ROOT="$(git -C "${SLURM_SUBMIT_DIR:-$(dirname "${BASH_SOURCE[0]}")}" rev-parse --show-toplevel)"
@@ -32,7 +33,7 @@ test -f "${DOCKERFILE}"
 
 echo "[build] host=$(hostname) date=$(date -u +%FT%TZ)"
 echo "[build] tree=$(git -C "${ROOT}" rev-parse --short HEAD) $(git -C "${ROOT}" rev-parse --abbrev-ref HEAD)"
-echo "[build] VLLM_REF=${VLLM_REF} BASE_IMAGE=${BASE_IMAGE} MAX_JOBS=${MAX_JOBS}"
+echo "[build] VLLM_REF=${VLLM_REF} MORI_REF=${MORI_REF} BASE_IMAGE=${BASE_IMAGE} MAX_JOBS=${MAX_JOBS}"
 echo "[build] TAG=${TAG}"
 df -h / /var/lib/docker 2>/dev/null || true
 
@@ -46,6 +47,7 @@ DOCKER_BUILDKIT=1 docker build \
     -f "${DOCKERFILE}" \
     --build-arg BASE_IMAGE="${BASE_IMAGE}" \
     --build-arg VLLM_REF="${VLLM_REF}" \
+    --build-arg MORI_REF="${MORI_REF}" \
     --build-arg MAX_JOBS="${MAX_JOBS}" \
     -t "${TAG}" \
     "${ROOT}/mad/docker"
