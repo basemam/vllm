@@ -1,0 +1,44 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Basem Barakat <basem.barakay@amd.com>
+Date: Wed, 14 Oct 2026 19:53:00 -0500
+Subject: [PATCH 1/2] [Core][Bugfix] Drop bounded_replay when promoting
+ SlidingWindowMLASpec
+
+With the hybrid KV cache manager disabled, _promote_local_kv_cache_specs
+rebuilds each SlidingWindowMLASpec as an MLAAttentionSpec via replace_as,
+which forwards every field of the source spec. bounded_replay (added in
+#56227) exists only on SlidingWindowMLASpec, so the rebuild raises
+
+  TypeError: MLAAttentionSpec.__init__() got an unexpected keyword
+  argument 'bounded_replay'
+
+and any sliding-window MLA model (DeepSeek-V4) fails at KV cache planning
+under --disable-hybrid-kv-cache-manager. A promoted spec keeps every
+block, so the window-bounded replay is moot, as extra_retained_tokens
+already is.
+
+Signed-off-by: Basem Barakat <basem.barakay@amd.com>
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ vllm/v1/core/kv_cache_planning.py | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/vllm/v1/core/kv_cache_planning.py b/vllm/v1/core/kv_cache_planning.py
+index 4d73f4303..2b98d2e9a 100644
+--- a/vllm/v1/core/kv_cache_planning.py
++++ b/vllm/v1/core/kv_cache_planning.py
+@@ -801,8 +801,9 @@ def _promote_local_kv_cache_specs(
+                 spec,
+                 target_cls,
+                 # Promoted specs allocate blocks for all tokens and never free
+-                # below the window, so the trailing-edge extension is moot.
+-                drop=("extra_retained_tokens",),
++                # below the window, so the trailing-edge extension and the
++                # window-bounded prefix replay are both moot.
++                drop=("extra_retained_tokens", "bounded_replay"),
+                 block_size=block_size,
+                 page_size_padded=promoted_page_size_padded(spec, block_size),
+             )
+-- 
+2.43.0
+
